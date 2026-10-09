@@ -1,22 +1,23 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["config:recommended"],
+  "extends": ["config:recommended", "helpers:pinGitHubActionDigests"],
+  "minimumReleaseAge": "18 days",
   "customManagers": [
     {
       "customType": "regex",
-      "description": "Container Apps YAML (not a format Renovate knows natively)",
-      "managerFilePatterns": ["/^apps/[^/]+/app\\.yaml$/"],
-      "matchStrings": ["image:\\s*(?<depName>[^\\s:]+):(?<currentValue>[\\w.-]+)"],
+      "description": "Container image in Bicep files (not a format Renovate knows natively)",
+      "managerFilePatterns": ["/\\.bicep$/"],
+      "matchStrings": ["image: '(?<depName>[^':]+):(?<currentValue>[\\w.-]+)'"],
       "datasourceTemplate": "docker"
     }
   ],
   "packageRules": [
     {
-      "description": "2.5 weeks: let fresh releases prove themselves before we take them",
+      "description": "LiteLLM: merged automatically once CI passes; the deploy workflow rolls it out",
       "matchPackageNames": ["ghcr.io/berriai/litellm-database"],
-      "minimumReleaseAge": "18 days",
       "groupName": "litellm image",
-      "automerge": false
+      "automerge": true,
+      "automergeType": "pr"
     }
   ]
 }

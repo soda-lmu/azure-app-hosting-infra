@@ -1,8 +1,9 @@
-# Local smoke test with the same image and config as Azure: docker compose up
+# Local test with the same image and config as Azure. Compose only reads a .env next to
+# this file, so point it at the repo's .env:  docker compose --env-file ../../.env up -d
 # Postgres here stands in for the shared server (same per-app role/database layout).
 services:
   postgres:
-    image: postgres:16-alpine
+    image: postgres:18-alpine
     environment:
       POSTGRES_USER: litellm
       POSTGRES_PASSWORD: local
@@ -21,7 +22,8 @@ services:
     environment:
       DATABASE_URL: postgresql://litellm:local@postgres:5432/litellm
       LITELLM_MASTER_KEY: sk-local-test
-      AZURE_API_BASE: ${AZURE_API_BASE:-https://example.openai.azure.com/}
-      AZURE_API_KEY: ${AZURE_API_KEY:-unset}
+      # No fallbacks: fail at startup instead of sending requests with a placeholder key.
+      AZURE_API_BASE: ${AZURE_API_BASE:?run with --env-file ../../.env}
+      AZURE_API_KEY: ${AZURE_API_KEY:?run with --env-file ../../.env}
     depends_on:
       postgres: { condition: service_healthy }

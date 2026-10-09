@@ -1,0 +1,94 @@
+# Deploys apps/litellm/main.bicep when it (or config.yaml) changes on main, e.g. after Renovate
+# merged a LiteLLM update. Logs in to Azure via OIDC: the federated credential only trusts the
+# "litellm-production" environment, which only accepts main. No secrets are stored in GitHub.
+# If the new revision isn't healthy, it redeploys the previously running commit and opens an
+# issue assigned to NOTIFY_USER, default the repo owner (the failed run itself only notifies
+# whoever triggered it, which for automatic merges is the Renovate bot).
+name: LiteLLM Deploy
+
+on:
+  push:
+    branches: [main]
+    paths: ['apps/litellm/**', '.github/workflows/litellm-deploy.yml']
+  workflow_dispatch:
+
+concurrency:
+  group: litellm-deploy-production
+  cancel-in-progress: false
+
+permissions:
+  id-token: write # OIDC login to Azure
+  contents: read
+  issues: write   # rollback notification
+
+jobs:
+  litellm-deploy:
+    runs-on: ubuntu-latest
+    environment: litellm-production
+    env: # GitHub environment variables (not secrets), printed by apps/litellm/deploy.sh
+      LITELLM_RG: ${{ vars.LITELLM_RG }}
+      LITELLM_SECRETS_RG: ${{ vars.LITELLM_SECRETS_RG }}
+      LITELLM_APP: litellm
+      PG_SERVER: ${{ vars.PG_SERVER }}
+      AZURE_API_BASE: ${{ vars.AZURE_API_BASE }}
+      DEPLOYED_COMMIT: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # history, to roll back to an earlier commit
+
+      - uses: azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Remember the running commit
+        id: before
+        run: |
+          commit=$(az containerapp show -n "$LITELLM_APP" -g "$LITELLM_RG" --query tags.commit -o tsv 2>/dev/null || true)
+          # Fall back to the previous main if the running one isn't a known commit (e.g. "-dirty").
+          git cat-file -e "${commit}^{commit}" 2>/dev/null || commit=${{ github.event.before }}
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+          echo "Running before deploy: $commit"
+
+      - name: Deploy main.bicep
+        working-directory: apps/litellm
+        run: az deployment group create -g "$LITELLM_RG" -n litellm -p main.bicepparam -o none
+
+      - name: Health check of the new revision
+        run: |
+          for _ in $(seq 60); do # up to 10 minutes
+            read -r latest ready fqdn <<< "$(az containerapp show -n "$LITELLM_APP" -g "$LITELLM_RG" \
+              --query "[properties.latestRevisionName, properties.latestReadyRevisionName, properties.configuration.ingress.fqdn]" -o tsv | xargs)"
+            # Ready must be the *new* revision; otherwise the old one may still be answering.
+            if [[ $latest == "$ready" ]] && curl -sf "https://$fqdn/health/readiness" | jq -e '.db == "connected"' > /dev/null; then
+              echo "Revision $latest is healthy"; exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::Revision $latest did not become healthy"; exit 1
+
+      - name: Roll back to the previously running commit
+        id: rollback
+        if: failure() && steps.before.outputs.commit != ''
+        env:
+          DEPLOYED_COMMIT: ${{ steps.before.outputs.commit }}
+        run: |
+          git checkout "$DEPLOYED_COMMIT" -- apps/litellm
+          cd apps/litellm
+          az deployment group create -g "$LITELLM_RG" -n litellm -p main.bicepparam -o none
+          echo "::error::Rolled back to $DEPLOYED_COMMIT"
+
+      - name: Notify
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue create --repo "${{ github.repository }}" --assignee "${{ vars.NOTIFY_USER || github.repository_owner }}" \
+            --title "Deploy of ${GITHUB_SHA::7} failed" \
+            --body "The deploy of ${{ github.sha }} failed its health check.
+          Rollback to \`${{ steps.before.outputs.commit }}\`: ${{ steps.rollback.outcome }}.
+          Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+          main still contains the failed change: revert it, or fix it forward."

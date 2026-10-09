@@ -1,5 +1,5 @@
-# LiteLLM proxy config. Holds no secrets: keys come from env vars set in app.yaml.
-# Deployed as a Container Apps secret, mounted at /mnt/secrets/litellm-config.
+# LiteLLM proxy config. Holds no secrets: keys come from env vars set in main.bicep.
+# Deployed as a Container Apps secret (loadTextContent in main.bicep), mounted at /mnt/secrets/litellm-config.
 model_list:
   - model_name: gpt-6-luna
     litellm_params:

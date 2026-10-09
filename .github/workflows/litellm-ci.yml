@@ -1,0 +1,59 @@
+# LiteLLM: checks every PR (including Renovate's) before it can merge into main. Both jobs are
+# required status checks in the main ruleset, so there's deliberately no path filter: a required
+# check that doesn't run would block the PR. No Azure access and no secrets: dummy values only.
+name: LiteLLM CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  litellm-bicep:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Lint and build Bicep
+        env: # dummy values; main.bicepparam reads these
+          PG_SERVER: ci
+          AZURE_API_BASE: https://example.invalid
+        run: |
+          az bicep install
+          for f in $(git ls-files 'apps/litellm/*.bicep'); do
+            az bicep lint --file "$f"
+            az bicep build --file "$f" --stdout > /dev/null
+          done
+          for f in $(git ls-files 'apps/litellm/*.bicepparam'); do
+            az bicep build-params --file "$f" --stdout > /dev/null
+          done
+
+  litellm-health-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Start LiteLLM with our config (local Postgres, dummy Azure key)
+        working-directory: apps/litellm
+        env:
+          AZURE_API_BASE: https://example.invalid
+          AZURE_API_KEY: dummy
+        run: docker compose up -d --quiet-pull
+      - name: Wait for /health/liveliness and the database
+        run: |
+          for _ in $(seq 90); do
+            if curl -sf localhost:4000/health/liveliness > /dev/null &&
+               curl -sf localhost:4000/health/readiness | jq -e '.db == "connected"' > /dev/null; then
+              echo "LiteLLM is healthy"; exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::LiteLLM did not become healthy within 3 minutes"; exit 1
+      - name: LiteLLM logs
+        if: failure()
+        working-directory: apps/litellm
+        env:
+          AZURE_API_BASE: https://example.invalid
+          AZURE_API_KEY: dummy
+        run: docker compose logs litellm
