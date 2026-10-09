@@ -1,0 +1,67 @@
+# Container App definition, deployed by deploy.sh via `az containerapp create|update --yaml`.
+# deploy.sh fills ${...} from .env and inserts config.yaml at __LITELLM_CONFIG__.
+# Never commit a rendered copy: it contains secrets.
+name: ${LITELLM_APP}
+location: ${LOCATION}
+type: Microsoft.App/containerApps
+properties:
+  managedEnvironmentId: ${ENV_ID}
+  configuration:
+    activeRevisionsMode: Single
+    ingress:
+      external: true
+      targetPort: 4000
+      transport: auto
+    secrets:
+      - name: litellm-config
+        value: |
+          __LITELLM_CONFIG__
+      - name: master-key
+        value: ${LITELLM_MASTER_KEY}
+      - name: database-url
+        value: ${DATABASE_URL}
+      - name: azure-api-key
+        value: ${AZURE_API_KEY}
+  template:
+    containers:
+      - name: litellm
+        image: ghcr.io/berriai/litellm-database:v1.104.0
+        args: ["--config", "/mnt/secrets/litellm-config", "--port", "4000"]
+        env:
+          - name: LITELLM_MASTER_KEY
+            secretRef: master-key
+          - name: DATABASE_URL
+            secretRef: database-url
+          - name: AZURE_API_KEY
+            secretRef: azure-api-key
+          - name: AZURE_API_BASE
+            value: ${AZURE_API_BASE}
+        resources:
+          cpu: 1.0
+          memory: 2Gi
+        volumeMounts:
+          - volumeName: config
+            mountPath: /mnt/secrets
+        probes:
+          # Boot plus first-run DB migrations take a while.
+          - type: Startup
+            httpGet: { path: /health/liveliness, port: 4000 }
+            periodSeconds: 10
+            failureThreshold: 30
+          - type: Liveness
+            httpGet: { path: /health/liveliness, port: 4000 }
+            periodSeconds: 30
+          - type: Readiness
+            httpGet: { path: /health/readiness, port: 4000 }
+            periodSeconds: 30
+    # Exactly one replica: budget/rate-limit state is cached per instance.
+    # Scaling out requires Redis (router_settings.redis_*) first.
+    scale:
+      minReplicas: 1
+      maxReplicas: 1
+    volumes:
+      - name: config
+        storageType: Secret
+        secrets:            # mount only the config, not the other secrets
+          - secretRef: litellm-config
+            path: litellm-config

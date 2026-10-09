@@ -1,0 +1,27 @@
+# Local smoke test with the same image and config as Azure: docker compose up
+# Postgres here stands in for the shared server (same per-app role/database layout).
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: litellm
+      POSTGRES_PASSWORD: local
+      POSTGRES_DB: litellm
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "litellm"]
+      interval: 2s
+      retries: 30
+
+  litellm:
+    image: ghcr.io/berriai/litellm-database:v1.104.0
+    command: ["--config", "/mnt/secrets/litellm-config", "--port", "4000"]
+    ports: ["4000:4000"]
+    volumes:
+      - ./config.yaml:/mnt/secrets/litellm-config:ro
+    environment:
+      DATABASE_URL: postgresql://litellm:local@postgres:5432/litellm
+      LITELLM_MASTER_KEY: sk-local-test
+      AZURE_API_BASE: ${AZURE_API_BASE:-https://example.openai.azure.com/}
+      AZURE_API_KEY: ${AZURE_API_KEY:-unset}
+    depends_on:
+      postgres: { condition: service_healthy }

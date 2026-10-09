@@ -1,0 +1,22 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Container Apps YAML (not a format Renovate knows natively)",
+      "managerFilePatterns": ["/^apps/[^/]+/app\\.yaml$/"],
+      "matchStrings": ["image:\\s*(?<depName>[^\\s:]+):(?<currentValue>[\\w.-]+)"],
+      "datasourceTemplate": "docker"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "2.5 weeks: let fresh releases prove themselves before we take them",
+      "matchPackageNames": ["ghcr.io/berriai/litellm-database"],
+      "minimumReleaseAge": "18 days",
+      "groupName": "litellm image",
+      "automerge": false
+    }
+  ]
+}
