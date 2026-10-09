@@ -10,3 +10,9 @@ model_list:
       # If the deployment name isn't a known model, or your price differs, set it explicitly:
       # input_cost_per_token: 0.0000001
       # output_cost_per_token: 0.0000005
+
+general_settings:
+  # Delete per-request spend logs older than 90 days (checked daily). Budgets are unaffected:
+  # they use the running totals on keys/users/teams, and the daily summaries are kept.
+  maximum_spend_logs_retention_period: "90d"
+  maximum_spend_logs_retention_interval: "1d"

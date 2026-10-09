@@ -91,3 +91,6 @@ merge into main (see [repository rules](../../README.md#repository-rules)).
 - Exactly one replica: budget/rate-limit state is cached per instance. Scaling out needs Redis.
 - Costs come from LiteLLM's price table, not Azure billing. Override per model in `config.yaml`
   if your pricing differs.
+- Spend logs (one row per request, ~6 KB) are deleted after 90 days
+  (`general_settings.maximum_spend_logs_retention_period` in `config.yaml`). Budgets and the daily
+  usage summaries are kept; only per-request detail older than that is gone.
