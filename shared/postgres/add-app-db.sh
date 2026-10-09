@@ -8,15 +8,18 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 set -a; source .env; set +a
 
-DB=${1:?database name}; ROLE=${2:?managed identity name}; OID=${3:?managed identity principal id}
+DB=${1:?database name}
+ROLE=${2:?managed identity name}
+OID=${3:?managed identity principal id}
 [[ $DB =~ ^[a-z][a-z0-9_]*$ ]] || { echo "database name must match ^[a-z][a-z0-9_]*$" >&2; exit 1; }
 ADMIN_GROUP=${PG_ENTRA_ADMIN_GROUP:-pg-shared-admins}
 
 # Entra access token as the password; group members log in with the group's name.
+# verify-full + system CA bundle: the token is only sent to a server proving it's the real one.
 TOKEN=$(az account get-access-token --resource-type oss-rdbms --query accessToken -o tsv)
 
 docker run --rm -i -e PGPASSWORD="$TOKEN" postgres:18-alpine \
-  psql "host=$PG_SERVER.postgres.database.azure.com port=5432 dbname=postgres user=$ADMIN_GROUP sslmode=require" \
+  psql "host=$PG_SERVER.postgres.database.azure.com port=5432 dbname=postgres user=$ADMIN_GROUP sslmode=verify-full sslrootcert=system" \
   -v ON_ERROR_STOP=1 -v db="$DB" -v role="$ROLE" -v oid="$OID" <<'SQL'
 -- Login role bound to the identity's object id (not its display name).
 SELECT format('SELECT * FROM pgaadauth_create_principal_with_oid(%L, %L, %L, false, false)',

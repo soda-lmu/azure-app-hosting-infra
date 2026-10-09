@@ -30,7 +30,7 @@ resource pg 'Microsoft.DBforPostgreSQL/flexibleServers@2025-08-01' = {
       tenantId: tenant().tenantId
     }
     storage: { storageSizeGB: 32 }
-    backup: { backupRetentionDays: backupRetentionDays, geoRedundantBackup: 'Disabled' }
+    backup: { backupRetentionDays: backupRetentionDays, geoRedundantBackup: 'Enabled' }
     network: { publicNetworkAccess: 'Enabled' }
   }
 }

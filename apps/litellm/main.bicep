@@ -83,7 +83,9 @@ resource app 'Microsoft.App/containerApps@2025-01-01' = {
             { name: 'DATABASE_HOST', value: pgHost }
             { name: 'DATABASE_USER', value: identity.name }
             { name: 'DATABASE_NAME', value: 'litellm' }
-            { name: 'DATABASE_SSLMODE', value: 'require' }
+            // Verify certificate chain (system CA bundle) and host name: the Entra token travels
+            // in the password field, so it must only ever reach the real server.
+            { name: 'DATABASE_SSLMODE', value: 'verify-full' }
             // Secret changes alone don't start a new revision. This hash changes with the
             // config, so a new revision rolls out exactly when config.yaml changes.
             { name: 'CONFIG_HASH', value: uniqueString(config) }
