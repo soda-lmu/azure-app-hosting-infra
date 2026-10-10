@@ -43,6 +43,28 @@ export PGPASSWORD=$(az account get-access-token --resource-type oss-rdbms --quer
 Valid about an hour, only checked when connecting. DBeaver's built-in Entra login needs a paid
 edition; in DBeaver Community, paste the token as the password or use the password admin.
 
+Example (database of LiteLLM):
+```bash
+psql "host=$PG_HOST port=5432 dbname=litellm_db user=pg-shared-admins sslmode=verify-full sslrootcert=system"
+```
+Nobody can log in *as* an app's managed identity from outside: Azure only issues its tokens to
+the resource it's attached to (e.g. the Container App).
+
+### Reading an app's tables
+**Untested, may not work as described.** An app's tables belong to its own role (e.g.
+`id-litellm-prod`), because the app creates them. On Azure the admin group isn't a full
+superuser, so reading them can fail with `permission denied`. Since the admin group created the
+app's role (`add-app-db.sh`), PostgreSQL 16+ should let it make itself a member and act with the
+app's rights:
+```sql
+GRANT "id-litellm-prod" TO "pg-shared-admins";
+SET ROLE "id-litellm-prod";
+SELECT count(*) FROM "LiteLLM_VerificationToken";
+RESET ROLE;
+```
+`SET ROLE` grants the app's full rights, including changing and deleting its data. To undo the
+membership: `REVOKE "id-litellm-prod" FROM "pg-shared-admins";`. Once tried, update this section.
+
 ## Add an app
 ```bash
 shared/postgres/add-app-db.sh <database> <identity-name> <identity-principal-id>
