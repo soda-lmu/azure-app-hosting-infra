@@ -1,11 +1,11 @@
 # LiteLLM
 
-LiteLLM proxy with budget-limited virtual keys in front of Azure OpenAI, on Azure Container Apps.
+LiteLLM proxy with budget-limited virtual keys in front of Azure AI models, on Azure Container Apps.
 Its data lives in its own database on the [shared PostgreSQL server](../../shared/postgres/README.md).
 
 | Resource group | Contents | Defined in |
 |---|---|---|
-| `LITELLM_SECRETS_RG` (default `rg-soda-litellm-secrets-prod`), **admin-only** | `id-litellm` (managed identity LiteLLM runs as: DB login, Key Vault), `kv-litellm-…` (Key Vault: master key, salt key, Azure OpenAI key), `id-github-deploy-litellm` (CI identity) | `setup.bicep` |
+| `LITELLM_SECRETS_RG` (default `rg-soda-litellm-secrets-prod`), **admin-only** | `id-litellm` (identity LiteLLM runs as), `kv-litellm-…` (Key Vault: master key, salt key), `id-github-deploy-litellm` (identity GitHub Actions deploys with) | `setup.bicep` |
 | `LITELLM_RG` (e.g. `rg-soda-litellm-prod`) | `cae-litellm` (Container Apps environment + `log-litellm` workspace), `litellm` (the proxy, 1 replica) | `main.bicep` |
 
 Whoever can manage the identity or the vault can read the secrets, hence the separate admin-only
@@ -15,10 +15,28 @@ the app references them in Key Vault.
 | File | Purpose |
 |---|---|
 | `config.yaml` | LiteLLM config: models, endpoints, prices. No secrets |
-| `setup.bicep`, `ci-access.bicep`, `names.bicep` | Admin part: identities, Key Vault, permissions |
+| `setup.bicep`, `github-access.bicep`, `ai-access.bicep`, `names.bicep` | Admin part: identities, Key Vault, permissions |
 | `main.bicep`, `main.bicepparam` | Routine part: environment and app |
 | `deploy.sh` | Admin deploy of everything. Safe to re-run |
 | `docker-compose.yml` | Local test with the same image and config |
+
+## Identities
+Who can access what. No identity holds an Azure AI key or a database password: Azure apps log in
+with Entra tokens.
+
+| Identity | Used by | Can access | Can't |
+|---|---|---|---|
+| `id-litellm` (`appIdentity` in `setup.bicep`) | the LiteLLM container | **Key Vault:** read secrets (Key Vault Secrets User). **Azure AI resource:** call models (Cognitive Services OpenAI User, `ai-access.bicep`). **Postgres:** all rights in its own `litellm` database (`add-app-db.sh`) | read Azure AI keys, change Azure resources, see other apps' databases |
+| `id-github-deploy-litellm` (`githubIdentity`) | GitHub Actions, only from environment `litellm-production` (main branch) | **`LITELLM_RG`:** Contributor (`github-access.bicep`). **`id-litellm`:** attach it to the app (Managed Identity Operator) | Key Vault, the secrets resource group, adding logins to `id-litellm`, Postgres, the Azure AI resource |
+| You (admin, signed in to `az`) | `deploy.sh` | **Key Vault:** write secrets (Key Vault Secrets Officer). Everything else through your subscription role (Owner): needed to assign the roles above | |
+
+- **Indirect access through deployments.** `id-github-deploy-litellm` can't read secrets itself,
+  but it can deploy code that runs as `id-litellm` and so reads them. That's why only main
+  deploys, and only you and Renovate can merge into main (see
+  [repository rules](../../README.md#repository-rules)).
+- **Adding a role:** in `setup.bicep` (or the matching module for another resource group), then
+  run `deploy.sh`. Removing a role from the template doesn't remove it in Azure: delete it with
+  `az role assignment delete`.
 
 ## Prerequisites
 - The shared PostgreSQL server is deployed, and you're in its Entra admin group
@@ -26,8 +44,8 @@ the app references them in Key Vault.
 - `az` CLI with Bicep, logged in; Docker.
 - `.env` in the repo root (see `.env.example`): `LITELLM_RG`, `LITELLM_SECRETS_RG`, `LITELLM_ENV`,
   `LITELLM_APP`, `LITELLM_IDENTITY`, `GITHUB_REPO` (for CI, optional), `AZURE_API_BASE`, and the
-  secrets `LITELLM_MASTER_KEY` (`sk-$(openssl rand -hex 24)`), `LITELLM_SALT_KEY`
-  (`openssl rand -hex 32`) and `AZURE_API_KEY`.
+  secrets `LITELLM_MASTER_KEY` (`sk-$(openssl rand -hex 24)`) and `LITELLM_SALT_KEY`
+  (`openssl rand -hex 32`). `AZURE_API_KEY` only for the local test: Azure uses `id-litellm`.
 
 ## Deploy
 1. Edit `config.yaml`: one entry per Azure OpenAI deployment, with an explicit price if the model
@@ -64,7 +82,9 @@ curl -X POST https://<fqdn>/key/generate -H "Authorization: Bearer $LITELLM_MAST
 cd apps/litellm && docker compose --env-file ../../.env up -d
 ```
 Same image and config on `localhost:4000` (master key `sk-local-test`), using the Azure endpoint
-and key from `.env`. Locally Postgres uses a password, since managed identities only exist in Azure.
+and `AZURE_API_KEY` from `.env`. Managed identities only exist in Azure, so locally LiteLLM uses the
+API key for models and a password for Postgres. If `AZURE_API_KEY` is set, it always takes
+precedence over the identity, also in Azure: don't add it to the Container App.
 
 ## Updates and CI/CD
 1. LiteLLM is pinned in `main.bicep`. Renovate proposes a new version only once it's 18 days old,
@@ -80,10 +100,7 @@ and key from `.env`. Locally Postgres uses a password, since managed identities 
    Container App) and opens an issue assigned to `NOTIFY_USER` (default: repo owner), so you get
    an email. main still contains the failed change: revert or fix it.
 
-What `id-github-deploy-litellm` may do: Contributor on `LITELLM_RG`, attach `id-litellm` to the app.
-Nothing on the Key Vault, and it can't add logins to `id-litellm`. Whoever can deploy the app can
-deploy code that runs as `id-litellm`; that's why only main deploys, and only you and Renovate can
-merge into main (see [repository rules](../../README.md#repository-rules)).
+What `id-github-deploy-litellm` may do: see [Identities](#identities).
 
 ### One-time GitHub setup for LiteLLM
 1. `GITHUB_REPO=owner/name` in `.env`, then run `deploy.sh`. It creates `id-github-deploy-litellm`

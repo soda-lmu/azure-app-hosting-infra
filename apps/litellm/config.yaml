@@ -35,6 +35,12 @@ model_list:
       api_base: os.environ/AZURE_AI_API_BASE
       api_key: os.environ/AZURE_API_KEY
 
+litellm_settings:
+  # Without an API key (as in Azure: AZURE_API_KEY isn't set there), LiteLLM gets Entra tokens for
+  # Azure AI through the managed identity (AZURE_CREDENTIAL, AZURE_CLIENT_ID) and renews them.
+  # Locally, with AZURE_API_KEY from .env, the key is used instead.
+  enable_azure_ad_token_refresh: true
+
 general_settings:
   # Delete per-request spend logs older than 90 days (checked daily). Budgets are unaffected:
   # they use the running totals on keys/users/teams, and the daily summaries are kept.

@@ -9,7 +9,7 @@ param appName string
 param environmentName string
 #disable-next-line secure-secrets-in-params // a resource group name, not a secret
 param secretsResourceGroup string
-param identityName string
+param appIdentityName string
 param pgHost string
 param azureApiBase string
 @description('Git commit being deployed; stored as a tag so a failed deploy can roll back to it.')
@@ -17,8 +17,8 @@ param deployedCommit string = 'unknown'
 
 var config = loadTextContent('config.yaml')
 
-resource identity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' existing = {
-  name: identityName
+resource appIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' existing = {
+  name: appIdentityName
   scope: resourceGroup(secretsResourceGroup)
 }
 
@@ -49,7 +49,7 @@ resource app 'Microsoft.App/containerApps@2025-01-01' = {
   name: appName
   location: location
   tags: { commit: deployedCommit }
-  identity: { type: 'UserAssigned', userAssignedIdentities: { '${identity.id}': {} } }
+  identity: { type: 'UserAssigned', userAssignedIdentities: { '${appIdentity.id}': {} } }
   properties: {
     managedEnvironmentId: env.id
     configuration: {
@@ -60,9 +60,8 @@ resource app 'Microsoft.App/containerApps@2025-01-01' = {
         { name: 'litellm-config', value: config }
         // Versionless Key Vault references: a new secret version is picked up within
         // 30 minutes and the revision restarts automatically.
-        { name: 'master-key', keyVaultUrl: '${keyVaultUri}secrets/litellm-master-key', identity: identity.id }
-        { name: 'azure-api-key', keyVaultUrl: '${keyVaultUri}secrets/azure-api-key', identity: identity.id }
-        { name: 'salt-key', keyVaultUrl: '${keyVaultUri}secrets/litellm-salt-key', identity: identity.id }
+        { name: 'master-key', keyVaultUrl: '${keyVaultUri}secrets/litellm-master-key', identity: appIdentity.id }
+        { name: 'salt-key', keyVaultUrl: '${keyVaultUri}secrets/litellm-salt-key', identity: appIdentity.id }
       ]
     }
     template: {
@@ -74,7 +73,8 @@ resource app 'Microsoft.App/containerApps@2025-01-01' = {
           resources: { cpu: json('1.0'), memory: '2Gi' }
           env: [
             { name: 'LITELLM_MASTER_KEY', secretRef: 'master-key' }
-            { name: 'AZURE_API_KEY', secretRef: 'azure-api-key' }
+            // No AZURE_API_KEY: LiteLLM calls Azure AI with Entra tokens of id-litellm
+            // (enable_azure_ad_token_refresh in config.yaml, AZURE_CREDENTIAL/AZURE_CLIENT_ID below).
             // Encrypts credentials LiteLLM stores in its database. Without it LiteLLM uses the
             // master key, so rotating the master key would make them unreadable.
             { name: 'LITELLM_SALT_KEY', secretRef: 'salt-key' }
@@ -85,9 +85,9 @@ resource app 'Microsoft.App/containerApps@2025-01-01' = {
             // password and renews it before it expires.
             { name: 'AZURE_POSTGRESQL_AUTH', value: 'true' }
             { name: 'AZURE_CREDENTIAL', value: 'ManagedIdentityCredential' }
-            { name: 'AZURE_CLIENT_ID', value: identity.properties.clientId }
+            { name: 'AZURE_CLIENT_ID', value: appIdentity.properties.clientId }
             { name: 'DATABASE_HOST', value: pgHost }
-            { name: 'DATABASE_USER', value: identity.name }
+            { name: 'DATABASE_USER', value: appIdentity.name }
             { name: 'DATABASE_NAME', value: 'litellm' }
             // Verify certificate chain (system CA bundle) and host name: the Entra token travels
             // in the password field, so it must only ever reach the real server.
