@@ -1,6 +1,12 @@
 # LiteLLM proxy config. Holds no secrets: keys come from env vars set in main.bicep.
 # Deployed as a Container Apps secret (loadTextContent in main.bicep), mounted at /mnt/secrets/litellm-config.
 model_list:
+  - model_name: text-embedding-ada-002
+    litellm_params:
+      model: azure/text-embedding-ada-002   # azure/<deployment-name>; priced from LiteLLM's table
+      api_base: os.environ/AZURE_API_BASE
+      api_version: "v1"
+      api_key: os.environ/AZURE_API_KEY
   - model_name: gpt-6-luna
     litellm_params:
       model: azure/gpt-6-luna        # azure/<deployment-name>; priced from LiteLLM's table
@@ -10,12 +16,24 @@ model_list:
       # If the deployment name isn't a known model, or your price differs, set it explicitly:
       # input_cost_per_token: 0.0000001
       # output_cost_per_token: 0.0000005
-  - model_name: azure-embedding-model # model group
+  - model_name: gpt-6-sol
     litellm_params:
-      model: azure/azure-embedding-model # model name for litellm.embedding(model=azure/azure-embedding-model) call
+      model: azure/gpt-6-sol               # azure/<deployment-name>; priced from LiteLLM's table
       api_base: os.environ/AZURE_API_BASE
+      api_version: "v1"
       api_key: os.environ/AZURE_API_KEY
-      api_version: 2023-07-01-preview
+  - model_name: DeepSeek-V4-Flash-0731
+    litellm_params:
+      # azure_ai/ (Azure AI Foundry provider), not azure/: LiteLLM's price table lists this model
+      # there, and only that way are requests charged. Same resource, endpoint and key as above.
+      model: azure_ai/DeepSeek-V4-Flash-0731   # azure_ai/<deployment-name>
+      api_base: os.environ/AZURE_AI_API_BASE   # AZURE_API_BASE + /openai/v1, set in main.bicep
+      api_key: os.environ/AZURE_API_KEY
+  - model_name: gpt-oss-120b
+    litellm_params:
+      model: azure_ai/gpt-oss-120b         # priced only under azure_ai/, like DeepSeek above
+      api_base: os.environ/AZURE_AI_API_BASE
+      api_key: os.environ/AZURE_API_KEY
 
 general_settings:
   # Delete per-request spend logs older than 90 days (checked daily). Budgets are unaffected:

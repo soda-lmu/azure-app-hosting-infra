@@ -25,6 +25,7 @@ services:
       LITELLM_SALT_KEY: local-test-salt
       # No fallbacks: fail at startup instead of sending requests with a placeholder key.
       AZURE_API_BASE: ${AZURE_API_BASE:?run with --env-file ../../.env}
+      AZURE_AI_API_BASE: ${AZURE_API_BASE:?run with --env-file ../../.env}/openai/v1
       AZURE_API_KEY: ${AZURE_API_KEY:?run with --env-file ../../.env}
     depends_on:
       postgres: { condition: service_healthy }

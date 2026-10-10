@@ -79,6 +79,8 @@ resource app 'Microsoft.App/containerApps@2025-01-01' = {
             // master key, so rotating the master key would make them unreadable.
             { name: 'LITELLM_SALT_KEY', secretRef: 'salt-key' }
             { name: 'AZURE_API_BASE', value: azureApiBase }
+            // Same endpoint for models served through LiteLLM's azure_ai provider (see config.yaml).
+            { name: 'AZURE_AI_API_BASE', value: '${endsWith(azureApiBase, '/') ? take(azureApiBase, length(azureApiBase) - 1) : azureApiBase}/openai/v1' }
             // Postgres login via the managed identity: LiteLLM fetches an Entra token as the
             // password and renews it before it expires.
             { name: 'AZURE_POSTGRESQL_AUTH', value: 'true' }
