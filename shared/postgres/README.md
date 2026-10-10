@@ -15,8 +15,8 @@ database and logs in with a managed identity. Defined in `main.bicep`.
 - `az` CLI with Bicep (`az bicep install`), logged in (`az login`); Docker (used to run `psql`).
 - You're a member of the Entra group `PG_ENTRA_ADMIN_GROUP` (default `pg-shared-admins`).
   `deploy.sh` prints how to create it if it doesn't exist. After joining, `az login` again.
-- `.env` in the repo root (see `.env.example`): `SHARED_RG`, `LOCATION`, `PG_SERVER` (globally
-  unique), `PG_SKU`, `PG_ENTRA_ADMIN_GROUP`, `PG_ADMIN_USER`, `PG_ADMIN_PASSWORD`
+- `.env` in the repo root (see `.env.example`): `SHARED_RG`, `LOCATION`, `PG_INSTANCE_NAME` (globally
+  unique), `PG_HOST` (derived from it), `PG_SKU`, `PG_ENTRA_ADMIN_GROUP`, `PG_ADMIN_USER`, `PG_ADMIN_PASSWORD`
   (`openssl rand -hex 24`), `PG_BACKUP_RETENTION_DAYS`.
 
 ## Deploy
@@ -32,8 +32,8 @@ later changes. Preview first with `az deployment group what-if` and the same arg
   an Entra token), or as the password admin `PG_ADMIN_USER`, for tools without Entra login.
   Keep that password long and random: with "allow all Azure services", anyone in Azure can try it.
 
-Connect at `<PG_SERVER>.postgres.database.azure.com:5432` with **`sslmode=verify-full`**: it
-checks the server's certificate and host name, so a token or password can't be handed to an
+Connect at `PG_HOST` (`<PG_INSTANCE_NAME>.postgres.database.azure.com`), port 5432, with
+**`sslmode=verify-full`**: it checks the server's certificate and host name, so a token or password can't be handed to an
 impostor (`require` only encrypts). Azure's root CAs (DigiCert Global Root G2, Microsoft RSA Root
 CA 2017) are in standard CA bundles; with psql use `sslrootcert=system`. Trust only these roots,
 never intermediate or server certificates (Microsoft rotates those unannounced). Entra token:

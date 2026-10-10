@@ -63,15 +63,21 @@ URL=$(az deployment group create -g "$LITELLM_RG" -n litellm -p main.bicepparam 
 echo "Deployed: $URL  (check: curl $URL/health/readiness)"
 
 if [[ -n ${GITHUB_CLIENT_ID:-} ]]; then
-  cat <<EOF
-
-GitHub: Settings -> Environments -> litellm-production -> Environment variables (none of these are secrets):
-  AZURE_CLIENT_ID=$GITHUB_CLIENT_ID
-  AZURE_TENANT_ID=$(az account show --query tenantId -o tsv)
-  AZURE_SUBSCRIPTION_ID=$(az account show --query id -o tsv)
-  LITELLM_RG=$LITELLM_RG
-  LITELLM_SECRETS_RG=$SECRETS_RG
-  PG_SERVER=$PG_SERVER
-  AZURE_API_BASE=$AZURE_API_BASE
-EOF
+  # The values GitHub must have. Compared with .env, where the same values are kept in sync by hand.
+  github_secret() {
+    local note=''
+    [[ ${!1:-} == "$2" ]] || note="   <- differs from .env, update it there too"
+    echo "  $1=$2$note"
+  }
+  echo
+  echo "GitHub: Settings -> Environments -> litellm-production. Keep in sync with .env."
+  echo "Environment secrets:"
+  github_secret LITELLM_GITHUB_DEPLOY_CLIENT_ID "$GITHUB_CLIENT_ID"
+  github_secret AZURE_TENANT_ID "$(az account show --query tenantId -o tsv)"
+  github_secret AZURE_SUBSCRIPTION_ID "$(az account show --query id -o tsv)"
+  github_secret PG_HOST "$PG_HOST"
+  github_secret AZURE_API_BASE "$AZURE_API_BASE"
+  echo "Environment variables:"
+  echo "  LITELLM_RG=$LITELLM_RG"
+  echo "  LITELLM_SECRETS_RG=$SECRETS_RG"
 fi

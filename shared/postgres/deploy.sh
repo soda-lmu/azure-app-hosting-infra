@@ -20,4 +20,4 @@ export ADMIN_GROUP_ID ADMIN_CLIENT_IP
 az group create -n "$SHARED_RG" -l "$LOCATION" -o none
 az deployment group create -g "$SHARED_RG" -n pg-shared -p main.bicepparam -o none
 
-echo "Server ready: $PG_SERVER.postgres.database.azure.com (admin client IP: $ADMIN_CLIENT_IP)"
+echo "Server ready: $PG_HOST (admin client IP: $ADMIN_CLIENT_IP)"

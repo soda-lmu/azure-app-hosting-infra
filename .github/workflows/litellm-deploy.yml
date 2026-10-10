@@ -1,6 +1,7 @@
 # Deploys apps/litellm/main.bicep when it (or config.yaml) changes on main, e.g. after Renovate
 # merged a LiteLLM update. Logs in to Azure via OIDC: the federated credential only trusts the
-# "litellm-production" environment, which only accepts main. No secrets are stored in GitHub.
+# "litellm-production" environment, which only accepts main. GitHub holds no credentials: the
+# environment secrets below are only identifiers and addresses, kept as secrets so logs mask them.
 # If the new revision isn't healthy, it redeploys the previously running commit and opens an
 # issue assigned to NOTIFY_USER, default the repo owner (the failed run itself only notifies
 # whoever triggered it, which for automatic merges is the Renovate bot).
@@ -25,12 +26,12 @@ jobs:
   litellm-deploy:
     runs-on: ubuntu-latest
     environment: litellm-production
-    env: # GitHub environment variables (not secrets), printed by apps/litellm/deploy.sh
+    env: # From the litellm-production environment (same values as .env), printed by apps/litellm/deploy.sh
       LITELLM_RG: ${{ vars.LITELLM_RG }}
       LITELLM_SECRETS_RG: ${{ vars.LITELLM_SECRETS_RG }}
       LITELLM_APP: litellm
-      PG_SERVER: ${{ vars.PG_SERVER }}
-      AZURE_API_BASE: ${{ vars.AZURE_API_BASE }}
+      PG_HOST: ${{ secrets.PG_HOST }}
+      AZURE_API_BASE: ${{ secrets.AZURE_API_BASE }}
       DEPLOYED_COMMIT: ${{ github.sha }}
     steps:
       - uses: actions/checkout@v7
@@ -39,9 +40,9 @@ jobs:
 
       - uses: azure/login@v3
         with:
-          client-id: ${{ vars.AZURE_CLIENT_ID }}
-          tenant-id: ${{ vars.AZURE_TENANT_ID }}
-          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+          client-id: ${{ secrets.LITELLM_GITHUB_DEPLOY_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Remember the running commit
         id: before

@@ -19,7 +19,7 @@ ADMIN_GROUP=${PG_ENTRA_ADMIN_GROUP:-pg-shared-admins}
 TOKEN=$(az account get-access-token --resource-type oss-rdbms --query accessToken -o tsv)
 
 docker run --rm -i -e PGPASSWORD="$TOKEN" postgres:18-alpine \
-  psql "host=$PG_SERVER.postgres.database.azure.com port=5432 dbname=postgres user=$ADMIN_GROUP sslmode=verify-full sslrootcert=system" \
+  psql "host=$PG_HOST port=5432 dbname=postgres user=$ADMIN_GROUP sslmode=verify-full sslrootcert=system" \
   -v ON_ERROR_STOP=1 -v db="$DB" -v role="$ROLE" -v oid="$OID" <<'SQL'
 -- Login role bound to the identity's object id (not its display name).
 SELECT format('SELECT * FROM pgaadauth_create_principal_with_oid(%L, %L, %L, false, false)',

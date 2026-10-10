@@ -18,7 +18,7 @@ jobs:
       - uses: actions/checkout@v7
       - name: Lint and build Bicep
         env: # dummy values; main.bicepparam reads these
-          PG_SERVER: ci
+          PG_INSTANCE_NAME: ci
           PG_ADMIN_USER: ci
           PG_ADMIN_PASSWORD: ci
           ADMIN_GROUP_ID: 00000000-0000-0000-0000-000000000000

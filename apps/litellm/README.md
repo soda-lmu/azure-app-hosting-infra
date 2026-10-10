@@ -104,11 +104,18 @@ What `id-github-deploy-litellm` may do: see [Identities](#identities).
 
 ### One-time GitHub setup for LiteLLM
 1. `GITHUB_REPO=owner/name` in `.env`, then run `deploy.sh`. It creates `id-github-deploy-litellm`
-   and prints the variables for step 2.
+   and prints the values for step 2. Put `LITELLM_GITHUB_DEPLOY_CLIENT_ID` into `.env` as well.
 2. Settings → Environments → **New environment `litellm-production`** (the name must match):
    - Deployment branches and tags: **Selected branches → `main`**. No required reviewers.
-   - Environment variables: the values `deploy.sh` printed. Optionally `NOTIFY_USER` (needed if
-     the repo belongs to an organization).
+   - **Environment secrets:** `LITELLM_GITHUB_DEPLOY_CLIENT_ID`, `AZURE_TENANT_ID`,
+     `AZURE_SUBSCRIPTION_ID`, `PG_HOST`, `AZURE_API_BASE`, as printed. They grant no access by themselves (logging in
+     also needs the environment's OIDC token), but as secrets they're masked in the logs.
+   - **Environment variables:** `LITELLM_RG`, `LITELLM_SECRETS_RG`, as printed. Optionally
+     `NOTIFY_USER` (needed if the repo belongs to an organization).
+
+The environment secrets are copies of the values in `.env` (see the block marked there) and must
+be kept in sync by hand: if they differ, the next GitHub deploy reverts what `deploy.sh` set.
+`deploy.sh` marks every value that differs from `.env` in its output.
 
 ## Notes
 - At most one replica: budget/rate-limit state is cached per instance. Scaling out needs Redis.

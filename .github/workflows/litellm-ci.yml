@@ -18,7 +18,7 @@ jobs:
       - uses: actions/checkout@v7
       - name: Lint and build Bicep
         env: # dummy values; main.bicepparam reads these
-          PG_SERVER: ci
+          PG_HOST: ci.postgres.database.azure.com
           AZURE_API_BASE: https://example.invalid
         run: |
           az bicep install
