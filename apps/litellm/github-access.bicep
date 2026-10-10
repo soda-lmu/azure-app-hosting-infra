@@ -1,5 +1,5 @@
-// Gives the GitHub Actions identity (id-github-deploy-litellm) Contributor on the app resource group (deployed by setup.bicep as a
-// module, because that resource group is a different scope).
+// Gives the GitHub Actions identity (names.githubIdentity) Contributor access 
+// on the app resource group (names.appResourceGroup). No secrets are stored here.
 param principalId string
 
 var contributor = 'b24988ac-6180-42a0-ab88-20f7382dd24c'

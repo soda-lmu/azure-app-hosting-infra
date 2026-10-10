@@ -5,17 +5,23 @@ Its data lives in its own database on the [shared PostgreSQL server](../../share
 
 | Resource group | Contents | Defined in |
 |---|---|---|
-| `LITELLM_SECRETS_RG` (default `rg-soda-litellm-secrets-prod`), **admin-only** | `id-litellm` (identity LiteLLM runs as), `kv-litellm-…` (Key Vault: master key, salt key), `id-github-deploy-litellm` (identity GitHub Actions deploys with) | `setup.bicep` |
-| `LITELLM_RG` (e.g. `rg-soda-litellm-prod`) | `cae-litellm` (Container Apps environment + `log-litellm` workspace), `litellm` (the proxy, 1 replica) | `main.bicep` |
+| `rg-litellm-secrets-prod`, **admin-only** | `id-litellm-prod` (identity LiteLLM runs as), `kv-litellm-…` (Key Vault: master key, salt key), `id-litellm-github-deploy-prod` (identity GitHub Actions deploys with) | `setup.bicep` |
+| `rg-litellm-prod` | `cae-litellm-prod` (Container Apps environment) + `log-litellm-prod` (its log workspace), `ca-litellm-prod` (the proxy, 1 replica) | `main.bicep` |
+
+All names are defined once in [`names.bicep`](names.bicep) (in git, not secret). The Bicep files
+import them, `deploy.sh` and the GitHub workflow read them from the compiled file; to use other
+names, change that file.
+`deploy.sh` shows the resource groups and asks you to confirm them before it deploys.
 
 Whoever can manage the identity or the vault can read the secrets, hence the separate admin-only
-group. `LITELLM_RG` holds only what routine deployments change and contains no secret values:
+group. `rg-litellm-prod` holds only what routine deployments change and contains no secret values:
 the app references them in Key Vault.
 
 | File | Purpose |
 |---|---|
 | `config.yaml` | LiteLLM config: models, endpoints, prices. No secrets |
-| `setup.bicep`, `github-access.bicep`, `ai-access.bicep`, `names.bicep` | Admin part: identities, Key Vault, permissions |
+| `names.bicep` | All resource names |
+| `setup.bicep`, `github-access.bicep`, `ai-access.bicep` | Admin part: identities, Key Vault, permissions |
 | `main.bicep`, `main.bicepparam` | Routine part: environment and app |
 | `deploy.sh` | Admin deploy of everything. Safe to re-run |
 | `docker-compose.yml` | Local test with the same image and config |
@@ -26,13 +32,13 @@ with Entra tokens.
 
 | Identity | Used by | Can access | Can't |
 |---|---|---|---|
-| `id-litellm` (`appIdentity` in `setup.bicep`) | the LiteLLM container | **Key Vault:** read secrets (Key Vault Secrets User). **Azure AI resource:** call models (Cognitive Services OpenAI User, `ai-access.bicep`). **Postgres:** all rights in its own `litellm` database (`add-app-db.sh`) | read Azure AI keys, change Azure resources, see other apps' databases |
-| `id-github-deploy-litellm` (`githubIdentity`) | GitHub Actions, only from environment `litellm-production` (main branch) | **`LITELLM_RG`:** Contributor (`github-access.bicep`). **`id-litellm`:** attach it to the app (Managed Identity Operator) | Key Vault, the secrets resource group, adding logins to `id-litellm`, Postgres, the Azure AI resource |
+| `id-litellm-prod` (`appIdentity` in `setup.bicep`) | the LiteLLM container | **Key Vault:** read secrets (Key Vault Secrets User). **Azure AI resource:** call models (Cognitive Services OpenAI User, `ai-access.bicep`). **Postgres:** all rights in its own `litellm_db` database (`add-app-db.sh`) | read Azure AI keys, change Azure resources, see other apps' databases |
+| `id-litellm-github-deploy-prod` (`githubIdentity`) | GitHub Actions, only from environment `litellm-production` (main branch) | **`rg-litellm-prod`:** Contributor (`github-access.bicep`). **`id-litellm-prod`:** attach it to the app (Managed Identity Operator) | Key Vault, the secrets resource group, adding logins to `id-litellm-prod`, Postgres, the Azure AI resource |
 | You (admin, signed in to `az`) | `deploy.sh` | **Key Vault:** write secrets (Key Vault Secrets Officer). Everything else through your subscription role (Owner): needed to assign the roles above | |
 
-- **Indirect access through deployments.** `id-github-deploy-litellm` can't read secrets itself,
-  but it can deploy code that runs as `id-litellm` and so reads them. That's why only main
-  deploys, and only you and Renovate can merge into main (see
+- **Indirect access through deployments.** `id-litellm-github-deploy-prod` can't read
+  secrets itself, but it can deploy code that runs as `id-litellm-prod` and so reads them.
+  That's why only main deploys, and only you and Renovate can merge into main (see
   [repository rules](../../README.md#repository-rules)).
 - **Adding a role:** in `setup.bicep` (or the matching module for another resource group), then
   run `deploy.sh`. Removing a role from the template doesn't remove it in Azure: delete it with
@@ -41,11 +47,10 @@ with Entra tokens.
 ## Prerequisites
 - The shared PostgreSQL server is deployed, and you're in its Entra admin group
   (see [its README](../../shared/postgres/README.md)).
-- `az` CLI with Bicep, logged in; Docker.
-- `.env` in the repo root (see `.env.example`): `LITELLM_RG`, `LITELLM_SECRETS_RG`, `LITELLM_ENV`,
-  `LITELLM_APP`, `LITELLM_IDENTITY`, `GITHUB_REPO` (for CI, optional), `AZURE_API_BASE`, and the
-  secrets `LITELLM_MASTER_KEY` (`sk-$(openssl rand -hex 24)`) and `LITELLM_SALT_KEY`
-  (`openssl rand -hex 32`). `AZURE_API_KEY` only for the local test: Azure uses `id-litellm`.
+- `az` CLI with Bicep, logged in; Docker; `jq`.
+- `.env` in the repo root (see `.env.example`): `GITHUB_REPO` (for CI, optional), `PG_HOST`,
+  `AZURE_API_BASE`, and the secrets `LITELLM_MASTER_KEY` (`sk-$(openssl rand -hex 24)`) and `LITELLM_SALT_KEY`
+  (`openssl rand -hex 32`). `AZURE_API_KEY` only for the local test: Azure uses `id-litellm-prod`.
 
 ## Deploy
 1. Edit `config.yaml`: one entry per Azure OpenAI deployment, with an explicit price if the model
@@ -55,8 +60,8 @@ with Entra tokens.
    apps/litellm/deploy.sh
    ```
    It deploys `setup.bicep`, writes the secrets from `.env` to Key Vault if they're set and
-   changed (the salt key only once, see below), creates the `litellm` database (`add-app-db.sh`, which Bicep can't do), then deploys
-   `main.bicep`. After the first run the secrets can be removed from `.env`.
+   changed (the salt key only once, see below), creates the `litellm_db` database (`add-app-db.sh`, which Bicep
+   can't do), then deploys `main.bicep`. After the first run the secrets can be removed from `.env`.
 
 - A new revision rolls out whenever `config.yaml` changes.
 - To change a key: put the new value in `.env` and re-run `deploy.sh`, or
@@ -94,23 +99,24 @@ precedence over the identity, also in Azure: don't add it to the Container App.
    No Azure access, no secrets.
 3. If CI passes, Renovate merges the PR automatically.
 4. **Deploy** (`.github/workflows/litellm-deploy.yml`) runs on main when `apps/litellm/` changes:
-   logs in to Azure via OIDC as `id-github-deploy-litellm`, deploys `main.bicep`, waits for the
+   logs in to Azure via OIDC as `id-litellm-github-deploy-prod`, deploys `main.bicep`, waits for the
    *new* revision to be ready and `/health/readiness` to report the database connected.
 5. If that fails, it redeploys the commit that was running before (recorded as tag `commit` on the
    Container App) and opens an issue assigned to `NOTIFY_USER` (default: repo owner), so you get
    an email. main still contains the failed change: revert or fix it.
 
-What `id-github-deploy-litellm` may do: see [Identities](#identities).
+What `id-litellm-github-deploy-prod` may do: see [Identities](#identities).
 
 ### One-time GitHub setup for LiteLLM
-1. `GITHUB_REPO=owner/name` in `.env`, then run `deploy.sh`. It creates `id-github-deploy-litellm`
-   and prints the values for step 2. Put `LITELLM_GITHUB_DEPLOY_CLIENT_ID` into `.env` as well.
+1. `GITHUB_REPO=owner/name` in `.env`, then run `deploy.sh`. It creates
+   `id-litellm-github-deploy-prod` and prints the values for step 2. Put `LITELLM_GITHUB_DEPLOY_CLIENT_ID` into `.env` as well.
 2. Settings → Environments → **New environment `litellm-production`** (the name must match):
    - Deployment branches and tags: **Selected branches → `main`**. No required reviewers.
    - **Environment secrets:** `LITELLM_GITHUB_DEPLOY_CLIENT_ID`, `AZURE_TENANT_ID`,
-     `AZURE_SUBSCRIPTION_ID`, `PG_HOST`, `AZURE_API_BASE`, as printed. They grant no access by themselves (logging in
-     also needs the environment's OIDC token), but as secrets they're masked in the logs.
-   - **Environment variables:** `LITELLM_RG`, `LITELLM_SECRETS_RG`, as printed. Optionally
+     `AZURE_SUBSCRIPTION_ID`, `PG_HOST`, `AZURE_API_BASE`, as printed. They grant no access by
+     themselves (logging in also needs the environment's OIDC token), but as secrets they're
+     masked in the logs.
+   - **Environment variables:** none needed (resource names come from `names.bicep`). Optionally
      `NOTIFY_USER` (needed if the repo belongs to an organization).
 
 The environment secrets are copies of the values in `.env` (see the block marked there) and must

@@ -2,14 +2,9 @@
 // (what CI deploys). Identity and Key Vault come from setup.bicep in the secrets resource group;
 // this template only references them and never sees a secret value.
 // The LiteLLM config (models, endpoints, prices) lives in config.yaml next to this file.
-import { keyVaultName } from 'names.bicep'
+import { names, keyVaultName } from 'names.bicep'
 
 param location string = resourceGroup().location
-param appName string
-param environmentName string
-#disable-next-line secure-secrets-in-params // a resource group name, not a secret
-param secretsResourceGroup string
-param appIdentityName string
 param pgHost string
 param azureApiBase string
 @description('Git commit being deployed; stored as a tag so a failed deploy can roll back to it.')
@@ -18,21 +13,21 @@ param deployedCommit string = 'unknown'
 var config = loadTextContent('config.yaml')
 
 resource appIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' existing = {
-  name: appIdentityName
-  scope: resourceGroup(secretsResourceGroup)
+  name: names.appIdentity
+  scope: resourceGroup(names.secretsResourceGroup)
 }
 
 // Computed rather than read from the vault, so the deploying identity (CI) needs no rights on it.
-var keyVaultUri = 'https://${keyVaultName(subscription().subscriptionId, secretsResourceGroup)}${environment().suffixes.keyvaultDns}/'
+var keyVaultUri = 'https://${keyVaultName(subscription().subscriptionId, names.secretsResourceGroup)}${environment().suffixes.keyvaultDns}/'
 
 resource logs 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
-  name: 'log-${appName}'
+  name: names.logWorkspace
   location: location
   properties: { sku: { name: 'PerGB2018' }, retentionInDays: 30 }
 }
 
 resource env 'Microsoft.App/managedEnvironments@2025-01-01' = {
-  name: environmentName
+  name: names.containerAppEnvironment
   location: location
   properties: {
     appLogsConfiguration: {
@@ -46,7 +41,7 @@ resource env 'Microsoft.App/managedEnvironments@2025-01-01' = {
 }
 
 resource app 'Microsoft.App/containerApps@2025-01-01' = {
-  name: appName
+  name: names.containerApp
   location: location
   tags: { commit: deployedCommit }
   identity: { type: 'UserAssigned', userAssignedIdentities: { '${appIdentity.id}': {} } }
@@ -73,14 +68,13 @@ resource app 'Microsoft.App/containerApps@2025-01-01' = {
           resources: { cpu: json('1.0'), memory: '2Gi' }
           env: [
             { name: 'LITELLM_MASTER_KEY', secretRef: 'master-key' }
-            // No AZURE_API_KEY: LiteLLM calls Azure AI with Entra tokens of id-litellm
+            // No AZURE_API_KEY: LiteLLM calls Azure AI with Entra tokens of the app identity
             // (enable_azure_ad_token_refresh in config.yaml, AZURE_CREDENTIAL/AZURE_CLIENT_ID below).
-            // Encrypts credentials LiteLLM stores in its database. Without it LiteLLM uses the
-            // master key, so rotating the master key would make them unreadable.
+            // LITELLM_SALT_KEY encrypts credentials LiteLLM stores in its database.
             { name: 'LITELLM_SALT_KEY', secretRef: 'salt-key' }
             { name: 'AZURE_API_BASE', value: azureApiBase }
             // Same endpoint for models served through LiteLLM's azure_ai provider (see config.yaml).
-            { name: 'AZURE_AI_API_BASE', value: '${endsWith(azureApiBase, '/') ? take(azureApiBase, length(azureApiBase) - 1) : azureApiBase}/openai/v1' }
+            { name: 'AZURE_AI_API_BASE', value: uri(azureApiBase, 'openai/v1') }
             // Postgres login via the managed identity: LiteLLM fetches an Entra token as the
             // password and renews it before it expires.
             { name: 'AZURE_POSTGRESQL_AUTH', value: 'true' }
@@ -88,14 +82,13 @@ resource app 'Microsoft.App/containerApps@2025-01-01' = {
             { name: 'AZURE_CLIENT_ID', value: appIdentity.properties.clientId }
             { name: 'DATABASE_HOST', value: pgHost }
             { name: 'DATABASE_USER', value: appIdentity.name }
-            { name: 'DATABASE_NAME', value: 'litellm' }
-            // Verify certificate chain (system CA bundle) and host name: the Entra token travels
-            // in the password field, so it must only ever reach the real server.
+            { name: 'DATABASE_NAME', value: names.database }
             { name: 'DATABASE_SSLMODE', value: 'verify-full' }
             // Secret changes alone don't start a new revision. This hash changes with the
             // config, so a new revision rolls out exactly when config.yaml changes.
             { name: 'CONFIG_HASH', value: uniqueString(config) }
           ]
+          // LiteLLM expects config.yaml as a file, passing it as a secret is a useful detour. 
           volumeMounts: [{ volumeName: 'config', mountPath: '/mnt/secrets' }]
           probes: [
             // Traffic only flows once Startup and then Readiness succeed, so on a cold start every

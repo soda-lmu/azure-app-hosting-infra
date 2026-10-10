@@ -1,22 +1,22 @@
-// One-time / admin-only part of LiteLLM, in its own resource group that GitHub Actions gets no
-// rights on. Overview of the identities and their permissions: README.md, "Identities".
-// - appIdentity (id-litellm): the managed identity LiteLLM runs as (database login, Key Vault
-//   access, calling models on the Azure AI resource without an API key)
-// - the Key Vault holding LiteLLM's secrets (master key, salt key)
-// - githubIdentity (id-github-deploy-litellm): what GitHub Actions deploys with (OIDC, no stored
-//   secret), and its permissions
-// Kept apart because anyone who can manage these could read the secrets: directly, or by
+// One-time / admin-only part to set up LiteLLM.
+//  This runs inside the secretsResourceGroup, so that GitHub Actions gets no rights on.
+// Kept apart from appResourceGroup because anyone who can manage these could read the secrets: directly, or by
 // adding a login (federated credential) to an identity.
-import { keyVaultName } from 'names.bicep'
+//  
+//Overview of the identities and their permissions: README.md, "Identities".
+// - appIdentity: the managed identity LiteLLM runs as (database login, Key Vault access, calling
+//   models on the Azure AI resource without an API key)
+// - the Key Vault holding LiteLLM's secrets (master key, salt key)
+// - githubIdentity: what GitHub Actions deploys with (OIDC, no stored
+//   secret), and its permissions
+
+import { names, keyVaultName } from 'names.bicep'
 
 param location string = resourceGroup().location
-param appIdentityName string
 @description('Object id of the admin who writes the secrets (deploy.sh passes the signed-in user).')
 param adminPrincipalId string
 @description('GitHub repository (owner/name) allowed to deploy, from its "litellm-production" environment. Empty: no GitHub Actions identity.')
 param githubRepo string = ''
-@description('Resource group of the Container App, where GitHub Actions may deploy.')
-param appResourceGroup string
 @description('Azure AI resource whose models LiteLLM calls, and its resource group (deploy.sh looks both up).')
 param aiAccountName string
 param aiResourceGroup string
@@ -29,12 +29,12 @@ var roles = {
 var withGithub = !empty(githubRepo)
 
 resource appIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
-  name: appIdentityName
+  name: names.appIdentity
   location: location
 }
 
 resource vault 'Microsoft.KeyVault/vaults@2024-11-01' = {
-  name: keyVaultName(subscription().subscriptionId, resourceGroup().name)
+  name: keyVaultName(subscription().subscriptionId, names.secretsResourceGroup)
   location: location
   properties: {
     tenantId: tenant().tenantId
@@ -66,9 +66,9 @@ resource adminManagesSecrets 'Microsoft.Authorization/roleAssignments@2022-04-01
   }
 }
 
-// --- GitHub Actions logs in as this identity via OIDC (id-github-deploy-litellm) ---
+// --- GitHub Actions logs in as this identity via OIDC ---
 resource githubIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = if (withGithub) {
-  name: 'id-github-deploy-litellm'
+  name: names.githubIdentity
   location: location
 }
 
@@ -84,11 +84,11 @@ resource githubTrust 'Microsoft.ManagedIdentity/userAssignedIdentities/federated
   }
 }
 
-// GitHub Actions may attach id-litellm to the app (and read its client id), nothing else here:
-// no Key Vault access, and no way to add logins to the identity.
+// GitHub Actions may attach the app identity to the app (and read its client id), nothing else here:
+// no Key Vault access, and no way to add logins to the app identity.
 resource githubAttachesAppIdentity 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (withGithub) {
   scope: appIdentity
-  name: guid(appIdentity.id, 'id-github-deploy-litellm', roles.managedIdentityOperator)
+  name: guid(appIdentity.id, names.githubIdentity, roles.managedIdentityOperator)
   properties: {
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', roles.managedIdentityOperator)
     principalId: withGithub ? githubIdentity!.properties.principalId : ''
@@ -100,7 +100,7 @@ resource githubAttachesAppIdentity 'Microsoft.Authorization/roleAssignments@2022
 // having to give this resource group any rights on those other groups.
 module githubDeploysApp 'github-access.bicep' = if (withGithub) {
   name: 'github-access'
-  scope: resourceGroup(appResourceGroup)
+  scope: resourceGroup(names.appResourceGroup)
   params: { principalId: withGithub ? githubIdentity!.properties.principalId : '' }
 }
 

@@ -7,7 +7,7 @@ services:
     environment:
       POSTGRES_USER: litellm
       POSTGRES_PASSWORD: local
-      POSTGRES_DB: litellm
+      POSTGRES_DB: litellm_db
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "litellm"]
       interval: 2s
@@ -20,7 +20,7 @@ services:
     volumes:
       - ./config.yaml:/mnt/secrets/litellm-config:ro
     environment:
-      DATABASE_URL: postgresql://litellm:local@postgres:5432/litellm
+      DATABASE_URL: postgresql://litellm:local@postgres:5432/litellm_db
       LITELLM_MASTER_KEY: sk-local-test
       LITELLM_SALT_KEY: local-test-salt
       # No fallbacks: fail at startup instead of sending requests with a placeholder key.

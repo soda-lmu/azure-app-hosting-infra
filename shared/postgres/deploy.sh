@@ -5,6 +5,9 @@ set -euo pipefail
 cd "$(dirname "$0")"
 set -a; source ../../.env; set +a
 
+read -rp "The server will be deployed into resource group $SHARED_RG (created if missing). Use this name? [y/N] " answer
+[[ $answer == [yY]* ]] || { echo "Not deployed. Change SHARED_RG in .env." >&2; exit 1; }
+
 ADMIN_GROUP=${PG_ENTRA_ADMIN_GROUP:-pg-shared-admins}
 ADMIN_GROUP_ID=$(az ad group show -g "$ADMIN_GROUP" --query id -o tsv 2>/dev/null) || {
   cat >&2 <<EOF

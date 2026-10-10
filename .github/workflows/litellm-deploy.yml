@@ -26,10 +26,7 @@ jobs:
   litellm-deploy:
     runs-on: ubuntu-latest
     environment: litellm-production
-    env: # From the litellm-production environment (same values as .env), printed by apps/litellm/deploy.sh
-      LITELLM_RG: ${{ vars.LITELLM_RG }}
-      LITELLM_SECRETS_RG: ${{ vars.LITELLM_SECRETS_RG }}
-      LITELLM_APP: litellm
+    env: # Environment secrets of litellm-production (same values as .env), printed by apps/litellm/deploy.sh
       PG_HOST: ${{ secrets.PG_HOST }}
       AZURE_API_BASE: ${{ secrets.AZURE_API_BASE }}
       DEPLOYED_COMMIT: ${{ github.sha }}
@@ -37,6 +34,11 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0 # history, to roll back to an earlier commit
+
+      - name: Load resource names (apps/litellm/names.bicep)
+        run: |
+          az bicep build -f apps/litellm/names.bicep --stdout |
+            jq -r '.variables.names | "LITELLM_APP_RG=\(.appResourceGroup)\nLITELLM_CONTAINERAPP=\(.containerApp)"' >> "$GITHUB_ENV"
 
       - uses: azure/login@v3
         with:
@@ -47,7 +49,7 @@ jobs:
       - name: Remember the running commit
         id: before
         run: |
-          commit=$(az containerapp show -n "$LITELLM_APP" -g "$LITELLM_RG" --query tags.commit -o tsv 2>/dev/null || true)
+          commit=$(az containerapp show -n "$LITELLM_CONTAINERAPP" -g "$LITELLM_APP_RG" --query tags.commit -o tsv 2>/dev/null || true)
           # Fall back to the previous main if the running one isn't a known commit (e.g. "-dirty").
           git cat-file -e "${commit}^{commit}" 2>/dev/null || commit=${{ github.event.before }}
           echo "commit=$commit" >> "$GITHUB_OUTPUT"
@@ -55,12 +57,12 @@ jobs:
 
       - name: Deploy main.bicep
         working-directory: apps/litellm
-        run: az deployment group create -g "$LITELLM_RG" -n litellm -p main.bicepparam -o none
+        run: az deployment group create -g "$LITELLM_APP_RG" -n litellm -p main.bicepparam -o none
 
       - name: Health check of the new revision
         run: |
           for _ in $(seq 60); do # up to 10 minutes
-            read -r latest ready fqdn <<< "$(az containerapp show -n "$LITELLM_APP" -g "$LITELLM_RG" \
+            read -r latest ready fqdn <<< "$(az containerapp show -n "$LITELLM_CONTAINERAPP" -g "$LITELLM_APP_RG" \
               --query "[properties.latestRevisionName, properties.latestReadyRevisionName, properties.configuration.ingress.fqdn]" -o tsv | xargs)"
             # Ready must be the *new* revision; otherwise the old one may still be answering.
             if [[ $latest == "$ready" ]] && curl -sf "https://$fqdn/health/readiness" | jq -e '.db == "connected"' > /dev/null; then
@@ -78,7 +80,8 @@ jobs:
         run: |
           git checkout "$DEPLOYED_COMMIT" -- apps/litellm
           cd apps/litellm
-          az deployment group create -g "$LITELLM_RG" -n litellm -p main.bicepparam -o none
+          LITELLM_APP_RG=$(az bicep build -f names.bicep --stdout | jq -r .variables.names.appResourceGroup) # as of that commit
+          az deployment group create -g "$LITELLM_APP_RG" -n litellm -p main.bicepparam -o none
           echo "::error::Rolled back to $DEPLOYED_COMMIT"
 
       - name: Notify

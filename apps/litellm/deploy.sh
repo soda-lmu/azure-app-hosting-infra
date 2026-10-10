@@ -1,20 +1,31 @@
 #!/usr/bin/env bash
 # Admin deploy of LiteLLM. Safe to re-run.
-#  1. setup.bicep -> LITELLM_SECRETS_RG: app identity, Key Vault, GitHub Actions identity (admin-only),
+#  1. setup.bicep -> secrets resource group: app identity, Key Vault, GitHub Actions identity (admin-only),
 #     plus the app identity's permission to call models on the Azure AI resource
 #  2. secrets from .env -> Key Vault, if set there and changed
 #  3. the identity's database on the shared server (add-app-db.sh)
-#  4. main.bicep -> LITELLM_RG: Container Apps environment + app (the part CI will deploy)
-# Requires shared/postgres/deploy.sh to have run once, and you in the PG admin group.
+#  4. main.bicep -> app resource group: Container Apps environment + app (the part CI will deploy)
+# Resource names come from names.bicep. Requires shared/postgres/deploy.sh to have run once, and
+# you in the PG admin group.
 set -euo pipefail
 cd "$(dirname "$0")"
 ROOT=../..
 set -a; source "$ROOT/.env"; set +a
-SECRETS_RG=${LITELLM_SECRETS_RG:-rg-soda-litellm-secrets-prod}
-APP_IDENTITY=${LITELLM_IDENTITY:-id-litellm}
+
+# Resource names, defined in names.bicep (which setup.bicep and main.bicep import).
+read -r SECRETS_RG APP_RG APP_IDENTITY DB <<< "$(az bicep build -f names.bicep --stdout |
+  jq -r '.variables.names | "\(.secretsResourceGroup) \(.appResourceGroup) \(.appIdentity) \(.database)"')"
+
+cat <<EOF
+LiteLLM will be deployed into these resource groups (created if missing):
+  $SECRETS_RG   identities, Key Vault (admin-only)
+  $APP_RG   Container Apps environment and app
+EOF
+read -rp "Use these names? [y/N] " answer
+[[ $answer == [yY]* ]] || { echo "Not deployed. Change the names in apps/litellm/names.bicep." >&2; exit 1; }
 
 az group create -n "$SECRETS_RG" -l "$LOCATION" -o none
-az group create -n "$LITELLM_RG" -l "$LOCATION" -o none
+az group create -n "$APP_RG" -l "$LOCATION" -o none
 
 # The Azure AI resource whose models LiteLLM calls, found by its endpoint's subdomain.
 AI_HOST=${AZURE_API_BASE#https://}
@@ -24,7 +35,7 @@ read -r AI_ACCOUNT AI_RG <<< "$(az cognitiveservices account list \
 
 ME=$(az ad signed-in-user show --query id -o tsv)
 SETUP=$(az deployment group create -g "$SECRETS_RG" -n litellm-setup -f setup.bicep \
-  -p appIdentityName="$APP_IDENTITY" adminPrincipalId="$ME" githubRepo="${GITHUB_REPO:-}" appResourceGroup="$LITELLM_RG" \
+  -p adminPrincipalId="$ME" githubRepo="${GITHUB_REPO:-}" \
      aiAccountName="$AI_ACCOUNT" aiResourceGroup="$AI_RG" \
   --query "[properties.outputs.appIdentityPrincipalId.value, properties.outputs.keyVaultName.value, properties.outputs.githubIdentityClientId.value]" -o tsv)
 read -r APP_PRINCIPAL_ID KEYVAULT GITHUB_CLIENT_ID <<< "$(echo $SETUP)"
@@ -53,12 +64,12 @@ put_secret() {
 put_secret litellm-master-key "${LITELLM_MASTER_KEY:-}"
 put_secret litellm-salt-key "${LITELLM_SALT_KEY:-}" once
 
-"$ROOT/shared/postgres/add-app-db.sh" litellm "$APP_IDENTITY" "$APP_PRINCIPAL_ID" >/dev/null
+"$ROOT/shared/postgres/add-app-db.sh" "$DB" "$APP_IDENTITY" "$APP_PRINCIPAL_ID" >/dev/null
 
 # Recorded on the app, so CI can roll back to it. "-dirty": deployed with uncommitted changes.
 DEPLOYED_COMMIT=$(git rev-parse HEAD)$([[ -z $(git status --porcelain -- .) ]] || echo -dirty)
 export DEPLOYED_COMMIT
-URL=$(az deployment group create -g "$LITELLM_RG" -n litellm -p main.bicepparam \
+URL=$(az deployment group create -g "$APP_RG" -n litellm -p main.bicepparam \
   --query properties.outputs.url.value -o tsv)
 echo "Deployed: $URL  (check: curl $URL/health/readiness)"
 
@@ -77,7 +88,4 @@ if [[ -n ${GITHUB_CLIENT_ID:-} ]]; then
   github_secret AZURE_SUBSCRIPTION_ID "$(az account show --query id -o tsv)"
   github_secret PG_HOST "$PG_HOST"
   github_secret AZURE_API_BASE "$AZURE_API_BASE"
-  echo "Environment variables:"
-  echo "  LITELLM_RG=$LITELLM_RG"
-  echo "  LITELLM_SECRETS_RG=$SECRETS_RG"
 fi
