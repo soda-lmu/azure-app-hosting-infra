@@ -5,7 +5,7 @@ Its data lives in its own database on the [shared PostgreSQL server](../../share
 
 | Resource group | Contents | Defined in |
 |---|---|---|
-| `LITELLM_SECRETS_RG` (default `rg-soda-litellm-secrets-prod`), **admin-only** | `id-litellm` (managed identity LiteLLM runs as: DB login, Key Vault), `kv-litellm-…` (Key Vault: master key, Azure OpenAI key), `id-github-deploy-litellm` (CI identity) | `setup.bicep` |
+| `LITELLM_SECRETS_RG` (default `rg-soda-litellm-secrets-prod`), **admin-only** | `id-litellm` (managed identity LiteLLM runs as: DB login, Key Vault), `kv-litellm-…` (Key Vault: master key, salt key, Azure OpenAI key), `id-github-deploy-litellm` (CI identity) | `setup.bicep` |
 | `LITELLM_RG` (e.g. `rg-soda-litellm-prod`) | `cae-litellm` (Container Apps environment + `log-litellm` workspace), `litellm` (the proxy, 1 replica) | `main.bicep` |
 
 Whoever can manage the identity or the vault can read the secrets, hence the separate admin-only
@@ -26,7 +26,8 @@ the app references them in Key Vault.
 - `az` CLI with Bicep, logged in; Docker.
 - `.env` in the repo root (see `.env.example`): `LITELLM_RG`, `LITELLM_SECRETS_RG`, `LITELLM_ENV`,
   `LITELLM_APP`, `LITELLM_IDENTITY`, `GITHUB_REPO` (for CI, optional), `AZURE_API_BASE`, and the
-  secrets `LITELLM_MASTER_KEY` (`sk-$(openssl rand -hex 24)`) and `AZURE_API_KEY`.
+  secrets `LITELLM_MASTER_KEY` (`sk-$(openssl rand -hex 24)`), `LITELLM_SALT_KEY`
+  (`openssl rand -hex 32`) and `AZURE_API_KEY`.
 
 ## Deploy
 1. Edit `config.yaml`: one entry per Azure OpenAI deployment, with an explicit price if the model
@@ -35,8 +36,8 @@ the app references them in Key Vault.
    ```bash
    apps/litellm/deploy.sh
    ```
-   It deploys `setup.bicep`, writes the two secrets from `.env` to Key Vault if they're set and
-   changed, creates the `litellm` database (`add-app-db.sh`, which Bicep can't do), then deploys
+   It deploys `setup.bicep`, writes the secrets from `.env` to Key Vault if they're set and
+   changed (the salt key only once, see below), creates the `litellm` database (`add-app-db.sh`, which Bicep can't do), then deploys
    `main.bicep`. After the first run the secrets can be removed from `.env`.
 
 - A new revision rolls out whenever `config.yaml` changes.
@@ -44,6 +45,11 @@ the app references them in Key Vault.
   `az keyvault secret set --vault-name <kv> -n litellm-master-key --value …`. The app picks up the
   new version within 30 minutes and restarts by itself; for immediately,
   `az containerapp revision restart`.
+- **Never change the salt key** (`litellm-salt-key`). LiteLLM encrypts credentials it stores in its
+  database with it (e.g. models or provider keys added in the admin UI); a new salt key makes them
+  unreadable. `deploy.sh` therefore only writes it if it's missing, and stops if `.env` has a
+  different value. Keep a copy somewhere safe: losing it has the same effect. Because of the
+  separate salt key, the master key can be rotated freely.
 
 ## Use
 ```bash
@@ -88,7 +94,9 @@ merge into main (see [repository rules](../../README.md#repository-rules)).
      the repo belongs to an organization).
 
 ## Notes
-- Exactly one replica: budget/rate-limit state is cached per instance. Scaling out needs Redis.
+- At most one replica: budget/rate-limit state is cached per instance. Scaling out needs Redis.
+- Scales to zero when idle (by default after about 5 minutes without requests): no compute cost
+  then, but the first request afterwards waits for the container and LiteLLM to start.
 - Costs come from LiteLLM's price table, not Azure billing. Override per model in `config.yaml`
   if your pricing differs.
 - Spend logs (one row per request, ~6 KB) are deleted after 90 days

@@ -1,6 +1,6 @@
 // One-time / admin-only part of LiteLLM, in its own resource group that CI gets no rights on:
 // - the managed identity LiteLLM runs as (database login, Key Vault access)
-// - the Key Vault holding LiteLLM's secrets (master key, Azure OpenAI key)
+// - the Key Vault holding LiteLLM's secrets (master key, salt key, Azure OpenAI key)
 // - the identity GitHub Actions deploys with (OIDC, no stored secret), and its permissions
 // Kept apart because anyone who can manage these could read the secrets: directly, or by
 // adding a login (federated credential) to the identity.

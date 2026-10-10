@@ -10,6 +10,12 @@ model_list:
       # If the deployment name isn't a known model, or your price differs, set it explicitly:
       # input_cost_per_token: 0.0000001
       # output_cost_per_token: 0.0000005
+  - model_name: azure-embedding-model # model group
+    litellm_params:
+      model: azure/azure-embedding-model # model name for litellm.embedding(model=azure/azure-embedding-model) call
+      api_base: os.environ/AZURE_API_BASE
+      api_key: os.environ/AZURE_API_KEY
+      api_version: 2023-07-01-preview
 
 general_settings:
   # Delete per-request spend logs older than 90 days (checked daily). Budgets are unaffected:

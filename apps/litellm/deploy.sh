@@ -23,20 +23,28 @@ read -r MI_PRINCIPAL_ID KEYVAULT CI_CLIENT_ID <<< "$(echo $SETUP)"
 
 # Writes a secret if its value is set in .env and differs from Key Vault. Retries while the
 # role assignment from setup.bicep is still propagating (can take a few minutes).
+# Mode "once": only written if missing; a different existing value stops the script.
 put_secret() {
-  local name=$1 value=$2 current=
+  local name=$1 value=$2 mode=${3:-update} current='' state=unreachable
   [[ -n $value ]] || return 0
   for _ in $(seq 30); do
-    if current=$(az keyvault secret show --vault-name "$KEYVAULT" -n "$name" --query value -o tsv 2>&1); then break; fi
-    if [[ $current == *SecretNotFound* ]]; then current=; break; fi
+    if current=$(az keyvault secret show --vault-name "$KEYVAULT" -n "$name" --query value -o tsv 2>&1); then state=exists; break; fi
+    if [[ $current == *SecretNotFound* ]]; then current=; state=missing; break; fi
     sleep 10
   done
+  [[ $state == unreachable ]] && { echo "Key Vault: can't read $name: $current" >&2; exit 1; }
   [[ $current == "$value" ]] && return 0
+  if [[ $mode == once && $state == exists ]]; then
+    echo "Key Vault: $name is already set and differs from .env. Not changed: changing it makes" >&2
+    echo "everything LiteLLM encrypted in its database unreadable. Fix .env or remove the value there." >&2
+    exit 1
+  fi
   az keyvault secret set --vault-name "$KEYVAULT" -n "$name" --file <(printf %s "$value") -o none
   echo "Key Vault: updated $name"
 }
 put_secret litellm-master-key "${LITELLM_MASTER_KEY:-}"
 put_secret azure-api-key "${AZURE_API_KEY:-}"
+put_secret litellm-salt-key "${LITELLM_SALT_KEY:-}" once
 
 "$ROOT/shared/postgres/add-app-db.sh" litellm "$MI_NAME" "$MI_PRINCIPAL_ID" >/dev/null
 

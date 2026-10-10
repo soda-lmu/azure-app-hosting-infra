@@ -62,6 +62,7 @@ resource app 'Microsoft.App/containerApps@2025-01-01' = {
         // 30 minutes and the revision restarts automatically.
         { name: 'master-key', keyVaultUrl: '${keyVaultUri}secrets/litellm-master-key', identity: identity.id }
         { name: 'azure-api-key', keyVaultUrl: '${keyVaultUri}secrets/azure-api-key', identity: identity.id }
+        { name: 'salt-key', keyVaultUrl: '${keyVaultUri}secrets/litellm-salt-key', identity: identity.id }
       ]
     }
     template: {
@@ -74,6 +75,9 @@ resource app 'Microsoft.App/containerApps@2025-01-01' = {
           env: [
             { name: 'LITELLM_MASTER_KEY', secretRef: 'master-key' }
             { name: 'AZURE_API_KEY', secretRef: 'azure-api-key' }
+            // Encrypts credentials LiteLLM stores in its database. Without it LiteLLM uses the
+            // master key, so rotating the master key would make them unreadable.
+            { name: 'LITELLM_SALT_KEY', secretRef: 'salt-key' }
             { name: 'AZURE_API_BASE', value: azureApiBase }
             // Postgres login via the managed identity: LiteLLM fetches an Entra token as the
             // password and renews it before it expires.
@@ -92,16 +96,20 @@ resource app 'Microsoft.App/containerApps@2025-01-01' = {
           ]
           volumeMounts: [{ volumeName: 'config', mountPath: '/mnt/secrets' }]
           probes: [
-            // Boot plus first-run DB migrations take a while.
-            { type: 'Startup', httpGet: { path: '/health/liveliness', port: 4000 }, periodSeconds: 10, failureThreshold: 30 }
+            // Traffic only flows once Startup and then Readiness succeed, so on a cold start every
+            // probe interval adds waiting time. Startup: check every second, up to 4 minutes
+            // (boot plus first-run DB migrations). Readiness: retry quickly if the first check
+            // fails while the database connection is still being set up.
+            { type: 'Startup', httpGet: { path: '/health/liveliness', port: 4000 }, periodSeconds: 1, failureThreshold: 240 }
             { type: 'Liveness', httpGet: { path: '/health/liveliness', port: 4000 }, periodSeconds: 30 }
-            { type: 'Readiness', httpGet: { path: '/health/readiness', port: 4000 }, periodSeconds: 30 }
+            { type: 'Readiness', httpGet: { path: '/health/readiness', port: 4000 }, periodSeconds: 5 }
           ]
         }
       ]
-      // Exactly one replica: budget/rate-limit state is cached per instance.
+      // At most one replica: budget/rate-limit state is cached per instance.
       // Scaling out requires Redis (router_settings.redis_*) first.
-      scale: { minReplicas: 1, maxReplicas: 1 }
+      // Scales to zero when idle (no compute cost); the first request after that waits for a cold start.
+      scale: { minReplicas: 0, maxReplicas: 1 }
       volumes: [
         // Mount only the config, not the other secrets.
         { name: 'config', storageType: 'Secret', secrets: [{ secretRef: 'litellm-config', path: 'litellm-config' }] }

@@ -22,6 +22,7 @@ services:
     environment:
       DATABASE_URL: postgresql://litellm:local@postgres:5432/litellm
       LITELLM_MASTER_KEY: sk-local-test
+      LITELLM_SALT_KEY: local-test-salt
       # No fallbacks: fail at startup instead of sending requests with a placeholder key.
       AZURE_API_BASE: ${AZURE_API_BASE:?run with --env-file ../../.env}
       AZURE_API_KEY: ${AZURE_API_KEY:?run with --env-file ../../.env}
