@@ -20,6 +20,8 @@ param githubRepo string = ''
 @description('Azure AI resource whose models LiteLLM calls, and its resource group (deploy.sh looks both up).')
 param aiAccountName string
 param aiResourceGroup string
+@description('Comma-separated email addresses for the cost alerts (BUDGET_ALERT_EMAILS in .env).')
+param budgetAlertEmails string
 
 var roles = {
   keyVaultSecretsUser: '4633458b-17de-408a-b874-0445c86b69e6'
@@ -110,16 +112,19 @@ module appCallsModels 'ai-access.bicep' = {
   params: { aiAccountName: aiAccountName, principalId: appIdentity.properties.principalId }
 }
 
-// Monthly cost alerts (EUR) to the Owners, see shared/budget.bicep.
+// Monthly cost alerts (EUR), see shared/budget.bicep.
+var budgetContacts = map(split(budgetAlertEmails, ','), email => trim(email))
+
 module secretsBudget '../../shared/budget.bicep' = {
   name: 'budget'
-  params: { name: 'budget-${names.secretsResourceGroup}', amount: 1, timeGrain: 'Monthly' } // 0.20 € wanted; 1 € is the minimum
+  // 0.20 € wanted; 1 € is the minimum
+  params: { name: 'budget-${names.secretsResourceGroup}', amount: 1, timeGrain: 'Monthly', contactEmails: budgetContacts }
 }
 
 module appBudget '../../shared/budget.bicep' = {
   name: 'budget'
   scope: resourceGroup(names.appResourceGroup)
-  params: { name: 'budget-${names.appResourceGroup}', amount: 8, timeGrain: 'Monthly' }
+  params: { name: 'budget-${names.appResourceGroup}', amount: 8, timeGrain: 'Monthly', contactEmails: budgetContacts }
 }
 
 output appIdentityPrincipalId string = appIdentity.properties.principalId

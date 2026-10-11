@@ -11,6 +11,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 ROOT=../..
 set -a; source "$ROOT/.env"; set +a
+: "${BUDGET_ALERT_EMAILS:?set BUDGET_ALERT_EMAILS in .env (email addresses for the cost alerts)}"
 
 # Resource names, defined in names.bicep (which setup.bicep and main.bicep import).
 read -r SECRETS_RG APP_RG APP_IDENTITY DB <<< "$(az bicep build -f names.bicep --stdout |
@@ -36,7 +37,7 @@ read -r AI_ACCOUNT AI_RG <<< "$(az cognitiveservices account list \
 ME=$(az ad signed-in-user show --query id -o tsv)
 SETUP=$(az deployment group create -g "$SECRETS_RG" -n litellm-setup -f setup.bicep \
   -p adminPrincipalId="$ME" githubRepo="${GITHUB_REPO:-}" \
-     aiAccountName="$AI_ACCOUNT" aiResourceGroup="$AI_RG" \
+     aiAccountName="$AI_ACCOUNT" aiResourceGroup="$AI_RG" budgetAlertEmails="$BUDGET_ALERT_EMAILS" \
   --query "[properties.outputs.appIdentityPrincipalId.value, properties.outputs.keyVaultName.value, properties.outputs.githubIdentityClientId.value]" -o tsv)
 read -r APP_PRINCIPAL_ID KEYVAULT GITHUB_CLIENT_ID <<< "$(echo $SETUP)"
 

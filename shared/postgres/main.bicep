@@ -15,6 +15,8 @@ param adminClientIp string
 @minValue(7)
 @maxValue(35)
 param backupRetentionDays int = 14
+@description('Comma-separated email addresses for the cost alert (BUDGET_ALERT_EMAILS in .env).')
+param budgetAlertEmails string
 
 resource pg 'Microsoft.DBforPostgreSQL/flexibleServers@2025-08-01' = {
   name: serverName
@@ -58,10 +60,15 @@ resource allowAdmin 'Microsoft.DBforPostgreSQL/flexibleServers/firewallRules@202
   properties: { startIpAddress: adminClientIp, endIpAddress: adminClientIp }
 }
 
-// Monthly cost alert (EUR) to the Owners, see shared/budget.bicep.
+// Monthly cost alert (EUR), see shared/budget.bicep.
 module budget '../budget.bicep' = {
   name: 'budget'
-  params: { name: 'budget-${resourceGroup().name}', amount: 19, timeGrain: 'Monthly' }
+  params: {
+    name: 'budget-${resourceGroup().name}'
+    amount: 19
+    timeGrain: 'Monthly'
+    contactEmails: map(split(budgetAlertEmails, ','), email => trim(email))
+  }
 }
 
 output host string = pg.properties.fullyQualifiedDomainName

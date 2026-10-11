@@ -126,7 +126,8 @@ be kept in sync by hand: if they differ, the next GitHub deploy reverts what `de
 ## Notes
 - Cost alerts: monthly Azure budgets of 8 € (`rg-litellm-prod`) and 1 € (`rg-litellm-secrets-prod`,
   the minimum: Azure only accepts whole amounts), in `setup.bicep`. When the actual cost exceeds the
-  budget, the Owners get an email ([`shared/budget.bicep`](../../shared/budget.bicep)).
+  budget, the addresses in `BUDGET_ALERT_EMAILS` (from `.env`) get an email
+  ([`shared/budget.bicep`](../../shared/budget.bicep)).
   Budgets only alert, they don't stop anything. Model usage is billed on the Azure AI resource,
   not here: LiteLLM's key budgets limit that.
 - At most one replica: budget/rate-limit state is cached per instance. Scaling out needs Redis.

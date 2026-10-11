@@ -23,6 +23,7 @@ jobs:
           PG_ADMIN_PASSWORD: ci
           ADMIN_GROUP_ID: 00000000-0000-0000-0000-000000000000
           ADMIN_CLIENT_IP: 192.0.2.1
+          BUDGET_ALERT_EMAILS: ci@example.invalid
         run: |
           az bicep install
           for f in $(git ls-files 'shared/postgres/*.bicep'); do

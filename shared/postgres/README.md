@@ -75,7 +75,8 @@ Safe to re-run. Apps' own deploy scripts call it (e.g. `apps/litellm/deploy.sh`)
 
 ## Costs
 Monthly Azure budget of 19 € for the server's resource group (`main.bicep`): when the actual cost
-exceeds it, the Owners get an email ([`../budget.bicep`](../budget.bicep)). It only
+exceeds it, the addresses in `BUDGET_ALERT_EMAILS` (from `.env`) get an email
+([`../budget.bicep`](../budget.bicep)). It only
 alerts, it doesn't stop anything.
 
 ## Network
