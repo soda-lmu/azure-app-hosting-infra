@@ -15,7 +15,7 @@ import { names, keyVaultName } from 'names.bicep'
 param location string = resourceGroup().location
 @description('Object id of the admin who writes the secrets (deploy.sh passes the signed-in user).')
 param adminPrincipalId string
-@description('GitHub repository (owner/name) allowed to deploy, from its "litellm-production" environment. Empty: no GitHub Actions identity.')
+@description('GitHub repository allowed to deploy, from its "litellm-production" environment, as GitHub writes it in the OIDC token: owner@ownerId/name@repoId. Empty: no GitHub Actions identity.')
 param githubRepo string = ''
 @description('Azure AI resource whose models LiteLLM calls, and its resource group (deploy.sh looks both up).')
 param aiAccountName string
@@ -81,6 +81,8 @@ resource githubTrust 'Microsoft.ManagedIdentity/userAssignedIdentities/federated
   name: 'github-litellm-production'
   properties: {
     issuer: 'https://token.actions.githubusercontent.com'
+    // GitHub's subject format with IDs: a repo deleted and recreated under the same name gets new
+    // IDs, so it can't inherit this access.
     subject: 'repo:${githubRepo}:environment:litellm-production'
     audiences: ['api://AzureADTokenExchange']
   }

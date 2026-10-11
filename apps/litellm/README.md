@@ -108,7 +108,9 @@ precedence over the identity, also in Azure: don't add it to the Container App.
 What `id-litellm-github-deploy-prod` may do: see [Identities](#identities).
 
 ### One-time GitHub setup for LiteLLM
-1. `GITHUB_REPO=owner/name` in `.env`, then run `deploy.sh`. It creates
+1. `GITHUB_REPO=owner@ownerId/name@repoId` in `.env` (GitHub puts these IDs into its OIDC token;
+   get them with `gh api repos/OWNER/NAME --jq '.owner.id, .id'`, or copy them from a failed
+   login's "assertion subject"), then run `deploy.sh`. It creates
    `id-litellm-github-deploy-prod` and prints the values for step 2. Put `LITELLM_GITHUB_DEPLOY_CLIENT_ID` into `.env` as well.
 2. Settings → Environments → **New environment `litellm-production`** (the name must match):
    - Deployment branches and tags: **Selected branches → `main`**. No required reviewers.
