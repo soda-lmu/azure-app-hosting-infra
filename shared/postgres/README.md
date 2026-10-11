@@ -73,6 +73,11 @@ Creates the database, and a login role bound to the managed identity's object id
 in that database only. Other apps' roles can't connect to it. The admin group owns the database.
 Safe to re-run. Apps' own deploy scripts call it (e.g. `apps/litellm/deploy.sh`).
 
+## Costs
+Monthly Azure budget of 19 € for the server's resource group (`main.bicep`): when the actual cost
+exceeds it, the Owners get an email ([`../budget.bicep`](../budget.bicep)). It only
+alerts, it doesn't stop anything.
+
 ## Network
 - Firewall: all Azure services (so Container Apps can connect), plus the IP that last ran
   `deploy.sh`. If your IP changed, re-run it.

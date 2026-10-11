@@ -110,6 +110,18 @@ module appCallsModels 'ai-access.bicep' = {
   params: { aiAccountName: aiAccountName, principalId: appIdentity.properties.principalId }
 }
 
+// Monthly cost alerts (EUR) to the Owners, see shared/budget.bicep.
+module secretsBudget '../../shared/budget.bicep' = {
+  name: 'budget'
+  params: { name: 'budget-${names.secretsResourceGroup}', amount: 1, timeGrain: 'Monthly' } // 0.20 € wanted; 1 € is the minimum
+}
+
+module appBudget '../../shared/budget.bicep' = {
+  name: 'budget'
+  scope: resourceGroup(names.appResourceGroup)
+  params: { name: 'budget-${names.appResourceGroup}', amount: 8, timeGrain: 'Monthly' }
+}
+
 output appIdentityPrincipalId string = appIdentity.properties.principalId
 output keyVaultName string = vault.name
 output githubIdentityClientId string = withGithub ? githubIdentity!.properties.clientId : ''

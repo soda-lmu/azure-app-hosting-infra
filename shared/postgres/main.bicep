@@ -55,4 +55,10 @@ resource allowAdmin 'Microsoft.DBforPostgreSQL/flexibleServers/firewallRules@202
   properties: { startIpAddress: adminClientIp, endIpAddress: adminClientIp }
 }
 
+// Monthly cost alert (EUR) to the Owners, see shared/budget.bicep.
+module budget '../budget.bicep' = {
+  name: 'budget'
+  params: { name: 'budget-${resourceGroup().name}', amount: 19, timeGrain: 'Monthly' }
+}
+
 output host string = pg.properties.fullyQualifiedDomainName
