@@ -39,6 +39,9 @@ resource entraAdmin 'Microsoft.DBforPostgreSQL/flexibleServers/administrators@20
   parent: pg
   name: adminGroupObjectId
   properties: { principalName: adminGroupName, principalType: 'Group', tenantId: tenant().tenantId }
+  // Run after the firewall rules, not in parallel: while one is being written the server is busy,
+  // and the Entra admin operation fails ("AadAuthOperationCannotBePerformedWhenServerIsNotAccessible").
+  dependsOn: [allowAzure, allowAdmin]
 }
 
 // Allows all Azure services, not just ours. Fine for a test; for production add a
