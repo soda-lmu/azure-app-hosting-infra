@@ -19,8 +19,8 @@ Apply to the whole repo; needed for automatic updates. Private repos need GitHub
 Enterprise for rulesets.
 
 1. Install the [Renovate app](https://github.com/apps/renovate) for this repo only.
-   `renovate.json`: every update waits 18 days, GitHub Actions are pinned to commit hashes, only
-   the LiteLLM image is merged automatically.
+   `renovate.json`: updates wait 18 days (except LiteLLM, see `apps/litellm/README.md`), GitHub
+   Actions are pinned to commit hashes, only the LiteLLM image is merged automatically.
 2. Settings → General → **Allow auto-merge**.
 3. Settings → Rules → Rulesets, both targeting the default branch:
    - **`main: who can merge`**: rule *Restrict updates*. Bypass list: *Repository admin* and the

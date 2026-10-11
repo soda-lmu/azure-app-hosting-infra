@@ -13,7 +13,7 @@ database and logs in with a managed identity. Defined in `main.bicep`.
 
 ## Prerequisites
 - `az` CLI with Bicep (`az bicep install`), logged in (`az login`); Docker (used to run `psql`).
-- You're a member of the Entra group `PG_ENTRA_ADMIN_GROUP` (default `pg-shared-admins`).
+- You're a member of the Entra group `PG_ENTRA_ADMIN_GROUP`.
   `deploy.sh` prints how to create it if it doesn't exist. After joining, `az login` again.
 - `.env` in the repo root (see `.env.example`): `SHARED_RG`, `LOCATION`, `PG_INSTANCE_NAME` (globally
   unique), `PG_HOST` (derived from it), `PG_SKU`, `PG_ENTRA_ADMIN_GROUP`, `PG_ADMIN_USER`, `PG_ADMIN_PASSWORD`
@@ -26,11 +26,12 @@ shared/postgres/deploy.sh
 Looks up the admin group and your public IP, then deploys `main.bicep`. Also the way to roll out
 later changes. Preview first with `az deployment group what-if` and the same arguments.
 
-## Logins
+## Logins (Admin logins were never tested by a human)
 - **Apps:** managed identities (Microsoft Entra). No passwords.
 - **Admins:** either as a member of the Entra admin group (user = the group's name, password =
   an Entra token), or as the password admin `PG_ADMIN_USER`, for tools without Entra login.
   Keep that password long and random: with "allow all Azure services", anyone in Azure can try it.
+- The database is also secured through a firewall, see below. Most likely you cannot connect without changing it.
 
 Connect at `PG_HOST` (`<PG_INSTANCE_NAME>.postgres.database.azure.com`), port 5432, with
 **`sslmode=verify-full`**: it checks the server's certificate and host name, so a token or password can't be handed to an

@@ -6,12 +6,9 @@ Its data lives in its own database on the [shared PostgreSQL server](../../share
 | Resource group | Contents | Defined in |
 |---|---|---|
 | `rg-litellm-secrets-prod`, **admin-only** | `id-litellm-prod` (identity LiteLLM runs as), `kv-litellm-…` (Key Vault: master key, salt key), `id-litellm-github-deploy-prod` (identity GitHub Actions deploys with) | `setup.bicep` |
-| `rg-litellm-prod` | `cae-litellm-prod` (Container Apps environment) + `log-litellm-prod` (its log workspace), `ca-litellm-prod` (the proxy, 1 replica) | `main.bicep` |
+| `rg-litellm-prod` **managed through GitHub** | `cae-litellm-prod` (Container Apps environment) + `log-litellm-prod` (its log workspace), `ca-litellm-prod` (the proxy, 1 replica) | `main.bicep` |
 
-All names are defined once in [`names.bicep`](names.bicep) (in git, not secret). The Bicep files
-import them, `deploy.sh` and the GitHub workflow read them from the compiled file; to use other
-names, change that file.
-`deploy.sh` shows the resource groups and asks you to confirm them before it deploys.
+An administrator needs to run `deploy.sh` a single time. This creates every resource defined in `setup.bicep`, writes the master and salt keys to Key Vault, creates the `litellm_db` database (which Bicep can't do) and also executes `main.bicep`. Routine deployments, orchestrated by GitHub, only run `main.bicep`.
 
 Whoever can manage the identity or the vault can read the secrets, hence the separate admin-only
 group. `rg-litellm-prod` holds only what routine deployments change and contains no secret values:
@@ -59,22 +56,17 @@ with Entra tokens.
    ```bash
    apps/litellm/deploy.sh
    ```
-   It deploys `setup.bicep`, writes the secrets from `.env` to Key Vault if they're set and
-   changed (the salt key only once, see below), creates the `litellm_db` database (`add-app-db.sh`, which Bicep
-   can't do), then deploys `main.bicep`. After the first run the secrets can be removed from `.env`.
-
-- A new revision rolls out whenever `config.yaml` changes.
-- To change a key: put the new value in `.env` and re-run `deploy.sh`, or
-  `az keyvault secret set --vault-name <kv> -n litellm-master-key --value …`. The app picks up the
-  new version within 30 minutes and restarts by itself; for immediately,
-  `az containerapp revision restart`.
+- A new revision rolls out whenever `config.yaml` (or the LiteLLM version in `main.bicep`) changes.
+- To change the `LITELLM_MASTER_KEY`: put the new value in `.env` and re-run `deploy.sh`, or
+  `az keyvault secret set --vault-name <kv> -n litellm-master-key --value …`.
 - **Never change the salt key** (`litellm-salt-key`). LiteLLM encrypts credentials it stores in its
   database with it (e.g. models or provider keys added in the admin UI); a new salt key makes them
-  unreadable. `deploy.sh` therefore only writes it if it's missing, and stops if `.env` has a
-  different value. Keep a copy somewhere safe: losing it has the same effect. Because of the
-  separate salt key, the master key can be rotated freely.
+  unreadable. Keep a copy somewhere safe: losing it has the same effect.
 
 ## Use
+
+Admin panel: `https://<fqdn>/ui`. Or:
+
 ```bash
 curl https://<fqdn>/health/readiness
 curl -X POST https://<fqdn>/key/generate -H "Authorization: Bearer $LITELLM_MASTER_KEY" \
@@ -92,8 +84,12 @@ API key for models and a password for Postgres. If `AZURE_API_KEY` is set, it al
 precedence over the identity, also in Azure: don't add it to the Container App.
 
 ## Updates and CI/CD
-1. LiteLLM is pinned in `main.bicep`. Renovate proposes a new version only once it's 18 days old,
-   in one PR with `docker-compose.yml`.
+
+Changes in the `main` branch, specifically [`main.bicep`](main.bicep) and [`config.yaml`](config.yaml) in `apps/litellm/`, will be automatically deployed inside `rg-litellm-prod` (if all checks pass).
+
+1. LiteLLM is pinned in `main.bicep`. The Renovate app proposes each new release right away, in one
+   PR with `docker-compose.yml`. The 18-day wait for other updates can't apply: ghcr.io doesn't
+   report when an image was published.
 2. **CI** (`.github/workflows/litellm-ci.yml`, jobs `litellm-bicep` and `litellm-health-check`)
    builds the Bicep and starts that image with our `config.yaml` against a local Postgres.
    No Azure access, no secrets.
@@ -108,18 +104,18 @@ precedence over the identity, also in Azure: don't add it to the Container App.
 What `id-litellm-github-deploy-prod` may do: see [Identities](#identities).
 
 ### One-time GitHub setup for LiteLLM
-1. `GITHUB_REPO=owner@ownerId/name@repoId` in `.env` (GitHub puts these IDs into its OIDC token;
-   get them with `gh api repos/OWNER/NAME --jq '.owner.id, .id'`, or copy them from a failed
-   login's "assertion subject"), then run `deploy.sh`. It creates
-   `id-litellm-github-deploy-prod` and prints the values for step 2. Put `LITELLM_GITHUB_DEPLOY_CLIENT_ID` into `.env` as well.
+1. Set `GITHUB_REPO=owner@ownerId/name@repoId` in `.env` (GitHub puts these IDs into its OIDC token), then run `deploy.sh`. Azure will trust this exact GitHub Repo to make changes in `rg-litellm-prod` (via
+   `id-litellm-github-deploy-prod`). It also prints the values for step 2.
 2. Settings → Environments → **New environment `litellm-production`** (the name must match):
    - Deployment branches and tags: **Selected branches → `main`**. No required reviewers.
    - **Environment secrets:** `LITELLM_GITHUB_DEPLOY_CLIENT_ID`, `AZURE_TENANT_ID`,
      `AZURE_SUBSCRIPTION_ID`, `PG_HOST`, `AZURE_API_BASE`, as printed. They grant no access by
      themselves (logging in also needs the environment's OIDC token), but as secrets they're
      masked in the logs.
-   - **Environment variables:** none needed (resource names come from `names.bicep`). Optionally
-     `NOTIFY_USER` (needed if the repo belongs to an organization).
+   - **Environment variables:** `NOTIFY_USER` = your GitHub user name, so issues about failed
+     deploys are assigned to you and you get an email. Needed in an organization repo like this
+     one: without it, the issue stays unassigned. Resource names need no variables (they come
+     from `names.bicep`).
 
 The environment secrets are copies of the values in `.env` (see the block marked there) and must
 be kept in sync by hand: if they differ, the next GitHub deploy reverts what `deploy.sh` set.
@@ -131,10 +127,10 @@ be kept in sync by hand: if they differ, the next GitHub deploy reverts what `de
   budget, the addresses in `BUDGET_ALERT_EMAILS` (from `.env`) get an email
   ([`shared/budget.bicep`](../../shared/budget.bicep)).
   Budgets only alert, they don't stop anything. Model usage is billed on the Azure AI resource,
-  not here: LiteLLM's key budgets limit that.
-- At most one replica: budget/rate-limit state is cached per instance. Scaling out needs Redis.
+  which is not governed by this repository: LiteLLM's key budgets limit that.
+- At most one replica: budget/rate-limit state is cached per instance. Scaling out would need Redis.
 - Scales to zero when idle (by default after about 5 minutes without requests): no compute cost
-  then, but the first request afterwards waits for the container and LiteLLM to start.
+  then, but the first request afterwards waits for the container and LiteLLM to start (about 40 seconds for a cold start).
 - Costs come from LiteLLM's price table, not Azure billing. Override per model in `config.yaml`
   if your pricing differs.
 - Spend logs (one row per request, ~6 KB) are deleted after 90 days
