@@ -82,11 +82,14 @@ if [[ -n ${GITHUB_CLIENT_ID:-} ]]; then
     echo "  $1=$2$note"
   }
   echo
+  echo "GitHub: Create GitHub environment 'litellm-production' for branch main and add the following (low-sensitive) secrets." 
+  echo "GitHub: Configure that only branch main can deploy to it."
   echo "GitHub: Settings -> Environments -> litellm-production. Keep in sync with .env."
   echo "Environment secrets:"
-  github_secret LITELLM_GITHUB_DEPLOY_CLIENT_ID "$GITHUB_CLIENT_ID"
-  github_secret AZURE_TENANT_ID "$(az account show --query tenantId -o tsv)"
-  github_secret AZURE_SUBSCRIPTION_ID "$(az account show --query id -o tsv)"
   github_secret PG_HOST "$PG_HOST"
   github_secret AZURE_API_BASE "$AZURE_API_BASE"
+  github_secret AZURE_TENANT_ID "$(az account show --query tenantId -o tsv)"
+  github_secret AZURE_SUBSCRIPTION_ID "$(az account show --query id -o tsv)"
+  github_secret LITELLM_GITHUB_DEPLOY_CLIENT_ID "$GITHUB_CLIENT_ID"
+
 fi
