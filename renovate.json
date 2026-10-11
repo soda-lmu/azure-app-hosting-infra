@@ -1,5 +1,6 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": "Renovate opens PRs for dependency updates (GitHub Actions, container images incl. the one in Bicep); LiteLLM image updates merge automatically.",
   "extends": ["config:recommended", "helpers:pinGitHubActionDigests"],
   "minimumReleaseAge": "18 days",
   "customManagers": [
@@ -13,9 +14,10 @@
   ],
   "packageRules": [
     {
-      "description": "LiteLLM: merged automatically once CI passes; the deploy workflow rolls it out",
+      "description": "LiteLLM: merged automatically once CI passes; the deploy workflow rolls it out. No 18-day wait: ghcr.io has no publish dates, and without timestamp-optional every version would be held back forever",
       "matchPackageNames": ["ghcr.io/berriai/litellm-database"],
       "groupName": "litellm image",
+      "minimumReleaseAgeBehaviour": "timestamp-optional",
       "automerge": true,
       "automergeType": "pr"
     }
