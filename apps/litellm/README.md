@@ -35,7 +35,7 @@ with Entra tokens.
 
 - **Indirect access through deployments.** `id-litellm-github-deploy-prod` can't read
   secrets itself, but it can deploy code that runs as `id-litellm-prod` and so reads them.
-  That's why only main deploys, and only you and Renovate can merge into main (see
+  That's why only main deploys, and only people with write access can merge into main (see
   [repository rules](../../README.md#repository-rules)).
 - **Adding a role:** in `setup.bicep` (or the matching module for another resource group), then
   run `deploy.sh`. Removing a role from the template doesn't remove it in Azure: delete it with
@@ -87,13 +87,12 @@ precedence over the identity, also in Azure: don't add it to the Container App.
 
 Changes in the `main` branch, specifically [`main.bicep`](main.bicep) and [`config.yaml`](config.yaml) in `apps/litellm/`, will be automatically deployed inside `rg-litellm-prod` (if all checks pass).
 
-1. LiteLLM is pinned in `main.bicep`. The Renovate app proposes each new release right away, in one
-   PR with `docker-compose.yml`. The 18-day wait for other updates can't apply: ghcr.io doesn't
-   report when an image was published.
+1. LiteLLM is pinned in `main.bicep` and `docker-compose.yml`. Twice a month Renovate opens a PR
+   for the newest release at least 15 days old.
 2. **CI** (`.github/workflows/litellm-ci.yml`, jobs `litellm-bicep` and `litellm-health-check`)
    builds the Bicep and starts that image with our `config.yaml` against a local Postgres.
    No Azure access, no secrets.
-3. If CI passes, Renovate merges the PR automatically.
+3. If CI passes, GitHub auto-merges the PR.
 4. **Deploy** (`.github/workflows/litellm-deploy.yml`) runs on main when `apps/litellm/` changes:
    logs in to Azure via OIDC as `id-litellm-github-deploy-prod`, deploys `main.bicep`, waits for the
    *new* revision to be ready and `/health/readiness` to report the database connected.
