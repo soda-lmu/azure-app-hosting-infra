@@ -15,7 +15,7 @@ jobs:
   litellm-bicep:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Lint and build Bicep
         env: # dummy values; main.bicepparam reads these
           PG_HOST: ci.postgres.database.azure.com
@@ -33,7 +33,7 @@ jobs:
   litellm-health-check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Start LiteLLM with our config (local Postgres, dummy Azure key)
         working-directory: apps/litellm
         env:
