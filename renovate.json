@@ -1,8 +1,8 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "description": "Renovate opens PRs for dependency updates (GitHub Actions, container images incl. the one in Bicep); LiteLLM image updates merge automatically.",
+  "description": "Renovate opens PRs for dependency updates (GitHub Actions, container images incl. the one in Bicep); LiteLLM image updates and monthly GitHub Actions updates are merged by GitHub auto-merge.",
   "extends": ["config:recommended", "helpers:pinGitHubActionDigests"],
-  "minimumReleaseAge": "18 days",
+  "timezone": "Europe/Berlin",
   "customManagers": [
     {
       "customType": "regex",
@@ -14,12 +14,28 @@
   ],
   "packageRules": [
     {
-      "description": "LiteLLM: merged automatically once CI passes; the deploy workflow rolls it out. No 18-day wait: ghcr.io has no publish dates, and without timestamp-optional every version would be held back forever",
+      "description": "LiteLLM: PR opened twice a month (1st and 15th, 01:00-07:00), merged by GitHub auto-merge once CI passes; the deploy workflow rolls it out. Versions and release dates are looked up on Docker Hub (litellm/litellm-database, the same images as on ghcr.io), because ghcr.io has no publish dates; the files keep pulling from ghcr.io",
       "matchPackageNames": ["ghcr.io/berriai/litellm-database"],
       "groupName": "litellm image",
-      "minimumReleaseAgeBehaviour": "timestamp-optional",
+      "schedule": ["* 1-6 1,15 * *"],
+      "overridePackageName": "litellm/litellm-database",
+      "minimumReleaseAge": "15 days",
       "automerge": true,
       "automergeType": "pr"
+    },
+    {
+      "description": "GitHub Actions: all updates bundled into one PR, opened once a month (1st, 01:00-07:00), merged by GitHub auto-merge once CI passes",
+      "matchManagers": ["github-actions"],
+      "groupName": "github actions",
+      "schedule": ["* 1-6 1 * *"],
+      "automerge": true,
+      "automergeType": "pr"
+    },
+    {
+      "description": "GitHub Actions major versions (e.g. checkout v7 -> v8) still wait for a human review",
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["major"],
+      "automerge": false
     }
   ]
 }
