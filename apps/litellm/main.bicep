@@ -63,7 +63,7 @@ resource app 'Microsoft.App/containerApps@2025-01-01' = {
       containers: [
         {
           name: 'litellm'
-          image: 'ghcr.io/berriai/litellm-database:v1.104.0'
+          image: 'ghcr.io/berriai/litellm-database:v1.105.0'
           args: ['--config', '/mnt/secrets/litellm-config', '--port', '4000']
           resources: { cpu: json('1.0'), memory: '2Gi' }
           env: [
