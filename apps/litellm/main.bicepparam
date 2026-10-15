@@ -5,3 +5,4 @@ using 'main.bicep'
 param pgHost = readEnvironmentVariable('PG_HOST')
 param azureApiBase = readEnvironmentVariable('AZURE_API_BASE')
 param deployedCommit = readEnvironmentVariable('DEPLOYED_COMMIT', 'unknown')
+param customDomainStage = readEnvironmentVariable('LITELLM_CUSTOM_DOMAIN_STAGE', 'bound')

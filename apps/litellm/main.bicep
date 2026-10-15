@@ -9,8 +9,18 @@ param pgHost string
 param azureApiBase string
 @description('Git commit being deployed; stored as a tag so a failed deploy can roll back to it.')
 param deployedCommit string = 'unknown'
+// Azure only issues a managed certificate for a hostname already on the app, so the custom
+// domain is set up in stages (deploy.sh runs them; CI deploys 'bound' once the certificate exists):
+@description('''Custom domain (names.customDomain) setup stage:
+none: no custom domain.
+hostname: add the hostname to the app without a certificate, then create the managed certificate for it.
+bound: serve the domain with that certificate (it must exist). Routine deploys.''')
+@allowed(['none', 'hostname', 'bound'])
+param customDomainStage string = 'bound'
 
 var config = loadTextContent('config.yaml')
+var domainStage = empty(names.customDomain) ? 'none' : customDomainStage
+var customDomain = domainStage == 'bound'
 
 resource appIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' existing = {
   name: names.appIdentity
@@ -49,7 +59,24 @@ resource app 'Microsoft.App/containerApps@2025-01-01' = {
     managedEnvironmentId: env.id
     configuration: {
       activeRevisionsMode: 'Single'
-      ingress: { external: true, targetPort: 4000, transport: 'auto' }
+      ingress: {
+        external: true
+        targetPort: 4000
+        transport: 'auto'
+        // Must be listed on every deploy: a deploy without it removes the domain from the app.
+        // Referenced by id, not as a resource: in stage 'hostname' the certificate comes after the app.
+        customDomains: {
+          none: []
+          hostname: [{ name: names.customDomain, bindingType: 'Disabled' }]
+          bound: [
+            {
+              name: names.customDomain
+              bindingType: 'SniEnabled'
+              certificateId: resourceId('Microsoft.App/managedEnvironments/managedCertificates', env.name, names.customDomainCertificate)
+            }
+          ]
+        }[domainStage]
+      }
       secrets: [
         #disable-next-line use-secure-value-for-secure-inputs // config.yaml holds no secrets
         { name: 'litellm-config', value: config }
@@ -84,6 +111,8 @@ resource app 'Microsoft.App/containerApps@2025-01-01' = {
             { name: 'DATABASE_USER', value: appIdentity.name }
             { name: 'DATABASE_NAME', value: names.database }
             { name: 'DATABASE_SSLMODE', value: 'verify-full' }
+            // Links in the admin UI (and SSO redirects) point here.
+            ...(customDomain ? [{ name: 'PROXY_BASE_URL', value: 'https://${names.customDomain}' }] : [])
             // Secret changes alone don't start a new revision. This hash changes with the
             // config, so a new revision rolls out exactly when config.yaml changes.
             { name: 'CONFIG_HASH', value: uniqueString(config) }
@@ -113,4 +142,17 @@ resource app 'Microsoft.App/containerApps@2025-01-01' = {
   }
 }
 
-output url string = 'https://${app.properties.configuration.ingress.fqdn}'
+// Free TLS certificate for the custom domain, renewed by Azure. Validated through the CNAME record;
+// created once (stage 'hostname'), later deploys leave it alone.
+resource certificate 'Microsoft.App/managedEnvironments/managedCertificates@2025-01-01' = if (domainStage == 'hostname') {
+  parent: env
+  name: names.customDomainCertificate
+  location: location
+  properties: { subjectName: names.customDomain, domainControlValidation: 'CNAME' }
+  dependsOn: [app]
+}
+
+output url string = 'https://${customDomain ? names.customDomain : app.properties.configuration.ingress.fqdn}'
+// For the DNS records of the custom domain (deploy.sh).
+output fqdn string = app.properties.configuration.ingress.fqdn
+output domainVerificationId string = app.properties.customDomainVerificationId

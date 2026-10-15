@@ -18,6 +18,11 @@ var names = {
   githubIdentity: 'id-litellm-github-deploy-prod'
   // Database on the shared PostgreSQL server.
   database: 'litellm_db'
+  // Public hostname (DNS records: README, "Custom domain") and its managed TLS certificate in the
+  // Container Apps environment, created by deploy.sh. Empty customDomain: only the
+  // *.azurecontainerapps.io address.
+  customDomain: 'litellm.soda-lab.org'
+  customDomainCertificate: 'cert-litellm-prod'
 }
 
 @export()

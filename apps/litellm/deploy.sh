@@ -5,6 +5,8 @@
 #  2. secrets from .env -> Key Vault, if set there and changed
 #  3. the identity's database on the shared server (add-app-db.sh)
 #  4. main.bicep -> app resource group: Container Apps environment + app (the part CI will deploy)
+#  5. custom domain: once its DNS records exist, main.bicep in stages (see customDomainStage there)
+#     to add the hostname and its certificate, then to serve the domain with it
 # Resource names come from names.bicep. Requires shared/postgres/deploy.sh to have run once, and
 # you in the PG admin group.
 set -euo pipefail
@@ -14,8 +16,8 @@ set -a; source "$ROOT/.env"; set +a
 : "${BUDGET_ALERT_EMAILS:?set BUDGET_ALERT_EMAILS in .env (email addresses for the cost alerts)}"
 
 # Resource names, defined in names.bicep (which setup.bicep and main.bicep import).
-read -r SECRETS_RG APP_RG APP_IDENTITY DB <<< "$(az bicep build -f names.bicep --stdout |
-  jq -r '.variables.names | "\(.secretsResourceGroup) \(.appResourceGroup) \(.appIdentity) \(.database)"')"
+read -r SECRETS_RG APP_RG APP_IDENTITY DB ENV CERT DOMAIN <<< "$(az bicep build -f names.bicep --stdout |
+  jq -r '.variables.names | "\(.secretsResourceGroup) \(.appResourceGroup) \(.appIdentity) \(.database) \(.containerAppEnvironment) \(.customDomainCertificate) \(.customDomain)"')"
 
 cat <<EOF
 LiteLLM will be deployed into these resource groups (created if missing):
@@ -70,8 +72,47 @@ put_secret litellm-salt-key "${LITELLM_SALT_KEY:-}" once
 # Recorded on the app, so CI can roll back to it. "-dirty": deployed with uncommitted changes.
 DEPLOYED_COMMIT=$(git rev-parse HEAD)$([[ -z $(git status --porcelain -- .) ]] || echo -dirty)
 export DEPLOYED_COMMIT
-URL=$(az deployment group create -g "$APP_RG" -n litellm -p main.bicepparam \
-  --query properties.outputs.url.value -o tsv)
+# Deploys main.bicep; $1: custom domain stage (none, hostname, bound). Prints the outputs
+# url, fqdn and domainVerificationId. Assign the result (OUT=$(...)), so a failure stops the script.
+deploy_app() {
+  LITELLM_CUSTOM_DOMAIN_STAGE=$1 az deployment group create -g "$APP_RG" -n litellm -p main.bicepparam \
+    --query "properties.outputs.[url.value, fqdn.value, domainVerificationId.value]" -o tsv | xargs
+}
+# Provisioning state of the custom domain's certificate; empty if it (or the environment) is missing.
+cert_state() {
+  az containerapp env certificate list -g "$APP_RG" -n "$ENV" --managed-certificates-only \
+    --query "[?name=='$CERT'] | [0].properties.provisioningState" -o tsv 2>/dev/null || true
+}
+
+if [[ -z $DOMAIN || $(cert_state) == Succeeded ]]; then
+  OUT=$(deploy_app bound)
+else
+  # The app only accepts the hostname once DNS points to it and proves ownership. So: deploy
+  # without the domain (gives the record values), check DNS, then the stages hostname and bound.
+  OUT=$(deploy_app none)
+  read -r URL FQDN VERIFICATION_ID <<< "$OUT"
+  cname=$(dig +short CNAME "$DOMAIN")
+  if [[ ${cname,,} != "${FQDN,,}." || $(dig +short TXT "asuid.$DOMAIN") != *"$VERIFICATION_ID"* ]]; then
+    echo "Custom domain: not set up yet. Create these DNS records, then re-run deploy.sh:"
+    echo "  $DOMAIN  CNAME  $FQDN"
+    echo "  asuid.$DOMAIN  TXT  $VERIFICATION_ID"
+  else
+    OUT=$(deploy_app hostname)
+    echo "Custom domain: waiting for the certificate of $DOMAIN (usually a few minutes)"
+    for _ in $(seq 90); do # up to 15 minutes
+      state=$(cert_state)
+      [[ $state == Pending || -z $state ]] || break
+      sleep 10
+    done
+    if [[ $state != Succeeded ]]; then
+      echo "Custom domain: certificate $CERT is '$state'. Check the DNS records, then delete it" >&2
+      echo "(az containerapp env certificate delete -g $APP_RG -n $ENV -c $CERT) and re-run." >&2
+      exit 1
+    fi
+    OUT=$(deploy_app bound)
+  fi
+fi
+read -r URL _ <<< "$OUT"
 echo "Deployed: $URL  (check: curl $URL/health/readiness)"
 
 if [[ -n ${GITHUB_CLIENT_ID:-} ]]; then
