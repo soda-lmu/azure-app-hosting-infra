@@ -6,6 +6,7 @@ Renovate and GitHub Actions.
 | Part | What | README |
 |---|---|---|
 | `shared/postgres/` | PostgreSQL 18 server shared by several apps, one database per app | [shared/postgres/README.md](shared/postgres/README.md) |
+| `shared/sops/` | Key Vault key for SOPS: secret files committed encrypted, e.g. the settings `config.sops.env` | [shared/sops/README.md](shared/sops/README.md) |
 | `apps/litellm/` | LiteLLM proxy with budget-limited keys in front of Azure OpenAI | [apps/litellm/README.md](apps/litellm/README.md) |
 
 ## Getting started
