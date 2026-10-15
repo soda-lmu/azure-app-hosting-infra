@@ -6,7 +6,7 @@ Its data lives in its own database on the [shared PostgreSQL server](../../share
 | Resource group | Contents | Defined in |
 |---|---|---|
 | `rg-litellm-secrets-prod`, **admin-only** | `id-litellm-prod` (identity LiteLLM runs as), `kv-litellm-…` (Key Vault: master key, salt key), `id-litellm-github-deploy-prod` (identity GitHub Actions deploys with) | `setup.bicep` |
-| `rg-litellm-prod` **managed through GitHub** | `cae-litellm-prod` (Container Apps environment) + `log-litellm-prod` (its log workspace), `ca-litellm-prod` (the proxy, 1 replica) | `main.bicep` |
+| `rg-litellm-prod` **managed through GitHub** | `cae-litellm-prod` (Container Apps environment, with `cert-litellm-prod`: TLS certificate of the custom domain) + `log-litellm-prod` (its log workspace), `ca-litellm-prod` (the proxy, 1 replica) | `main.bicep` |
 
 An administrator needs to run `deploy.sh` a single time. This creates every resource defined in `setup.bicep`, writes the master and salt keys to Key Vault, creates the `litellm_db` database (which Bicep can't do) and also executes `main.bicep`. Routine deployments, orchestrated by GitHub, only run `main.bicep`.
 
@@ -44,7 +44,7 @@ with Entra tokens.
 ## Prerequisites
 - The shared PostgreSQL server is deployed, and you're in its Entra admin group
   (see [its README](../../shared/postgres/README.md)).
-- `az` CLI with Bicep, logged in; Docker; `jq`.
+- `az` CLI with Bicep, logged in; Docker; `jq`; `dig` (Debian/Ubuntu: `dnsutils`).
 - `.env` in the repo root (see `.env.example`): `GITHUB_REPO` (for CI, optional), `PG_HOST`,
   `AZURE_API_BASE`, and the secrets `LITELLM_MASTER_KEY` (`sk-$(openssl rand -hex 24)`) and `LITELLM_SALT_KEY`
   (`openssl rand -hex 32`). `AZURE_API_KEY` only for the local test: Azure uses `id-litellm-prod`.
@@ -56,6 +56,8 @@ with Entra tokens.
    ```bash
    apps/litellm/deploy.sh
    ```
+- On the first run, `deploy.sh` prints two DNS records for the [custom domain](#custom-domain).
+  Create them and run it again.
 - A new revision rolls out whenever `config.yaml` (or the LiteLLM version in `main.bicep`) changes.
 - To change the `LITELLM_MASTER_KEY`: put the new value in `.env` and re-run `deploy.sh`, or
   `az keyvault secret set --vault-name <kv> -n litellm-master-key --value …`.
@@ -63,13 +65,37 @@ with Entra tokens.
   database with it (e.g. models or provider keys added in the admin UI); a new salt key makes them
   unreadable. Keep a copy somewhere safe: losing it has the same effect.
 
+## Custom domain
+LiteLLM is served at `https://<customDomain>` (`customDomain` in `names.bicep`; empty:
+no custom domain). The `*.azurecontainerapps.io` address keeps working too.
+
+The DNS zone containing `<customDomain>` needs two records. `deploy.sh` prints them with the actual values
+until they resolve:
+
+| Name | Type | Value |
+|---|---|---|
+| `<customDomain>` | CNAME | the app's address, `ca-litellm-prod.<hash>.<region>.azurecontainerapps.io` |
+| `asuid.<customDomain>` | TXT | the domain verification id (`az containerapp show -n ca-litellm-prod -g rg-litellm-prod --query properties.customDomainVerificationId`) |
+
+Once they resolve, `deploy.sh` deploys `main.bicep` in two stages (`customDomainStage`):
+- `hostname` adds the hostname to the app and has Azure issue a free managed certificate
+`cert-litellm-prod` (renewed automatically)
+- `bound` serves the domain with it.
+
+Routine deploys use stage `bound`. Until the certificate exists, they deploy without the domain
+(GitHub logs a warning).
+
+To change the domain: change `customDomain` and give `customDomainCertificate` a new name in
+`names.bicep`, run `deploy.sh`, then delete the old certificate
+(`az containerapp env certificate delete -g rg-litellm-prod -n cae-litellm-prod -c <old name>`).
+
 ## Use
 
-Admin panel: `https://<fqdn>/ui`. Or:
+Admin panel: `https://<customDomain>/ui`. Or:
 
 ```bash
-curl https://<fqdn>/health/readiness
-curl -X POST https://<fqdn>/key/generate -H "Authorization: Bearer $LITELLM_MASTER_KEY" \
+curl https://<customDomain>/health/readiness
+curl -X POST https://<customDomain>/key/generate -H "Authorization: Bearer $LITELLM_MASTER_KEY" \
   -H "Content-Type: application/json" \
   -d '{"models":["gpt-6-luna"],"max_budget":50,"budget_duration":"30d"}'
 ```

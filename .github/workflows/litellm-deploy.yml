@@ -38,7 +38,7 @@ jobs:
       - name: Load resource names (apps/litellm/names.bicep)
         run: |
           az bicep build -f apps/litellm/names.bicep --stdout |
-            jq -r '.variables.names | "LITELLM_APP_RG=\(.appResourceGroup)\nLITELLM_CONTAINERAPP=\(.containerApp)"' >> "$GITHUB_ENV"
+            jq -r '.variables.names | "LITELLM_APP_RG=\(.appResourceGroup)\nLITELLM_CONTAINERAPP=\(.containerApp)\nLITELLM_ENV=\(.containerAppEnvironment)\nLITELLM_CERT=\(.customDomainCertificate)"' >> "$GITHUB_ENV"
 
       - uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3
         with:
@@ -54,6 +54,17 @@ jobs:
           git cat-file -e "${commit}^{commit}" 2>/dev/null || commit=${{ github.event.before }}
           echo "commit=$commit" >> "$GITHUB_OUTPUT"
           echo "Running before deploy: $commit"
+
+      # The custom domain's certificate is created by apps/litellm/deploy.sh (admin). Until then,
+      # deploy without the domain instead of failing. Also applies to the rollback below.
+      - name: Check the custom domain certificate
+        run: |
+          state=$(az containerapp env certificate list -g "$LITELLM_APP_RG" -n "$LITELLM_ENV" --managed-certificates-only \
+            --query "[?name=='$LITELLM_CERT'] | [0].properties.provisioningState" -o tsv 2>/dev/null || true)
+          if [[ $state == Succeeded ]]; then stage=bound; else stage=none
+            echo "::warning::Certificate $LITELLM_CERT not ready ('$state'): deploying without the custom domain. Run apps/litellm/deploy.sh."
+          fi
+          echo "LITELLM_CUSTOM_DOMAIN_STAGE=$stage" >> "$GITHUB_ENV"
 
       - name: Deploy main.bicep
         working-directory: apps/litellm
