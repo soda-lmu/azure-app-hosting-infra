@@ -1,4 +1,4 @@
-// Values come from .env (loaded by deploy.sh); ADMIN_GROUP_ID and ADMIN_CLIENT_IP are looked up by deploy.sh.
+// Values come from config.sops.yaml (set by mise, see mise.toml); ADMIN_GROUP_ID and ADMIN_CLIENT_IP are looked up by deploy.sh.
 using 'main.bicep'
 
 param serverName = readEnvironmentVariable('PG_INSTANCE_NAME')

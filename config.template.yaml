@@ -1,0 +1,57 @@
+# Config template
+# config.sops.yaml holds the real values (encrypted with SOPS, so they can be committed to the repository).
+# mise passes them to the deploy scripts (mise.toml).
+
+# ==================================================
+# Shared
+# ==================================================
+
+# These email addresses will receive cost alerts of all budgets (Postgres, LiteLLM). Comma-separated, e.g. a@x.de,b@y.de
+BUDGET_ALERT_EMAILS: ""
+
+# --- Shared PostgreSQL server (shared/postgres) ---
+SHARED_RG: rg-admin-appmanagement-shared-database-prod
+LOCATION: germanywestcentral
+# Server name, globally unique (host: <name>.postgres.database.azure.com)
+PG_INSTANCE_NAME: pg-shared-CHANGEME
+# smallest database server; move to Standard_B2s when more apps join
+PG_SKU: Standard_B1ms
+# Entra group whose members administer the server (and may use the SOPS key)
+PG_ENTRA_ADMIN_GROUP: pg-shared-admins
+# Password admin, for external tools without Entra login; password: openssl rand -hex 24
+PG_ADMIN_USER: pgadmin
+PG_ADMIN_PASSWORD: ""
+# 7-35; point-in-time restore window
+PG_BACKUP_RETENTION_DAYS: 14
+
+# --- GitHub Actions (litellm-production environment) ---
+# Repo allowed to deploy via GitHub Actions (its "litellm-production" environment), as in
+# GitHub's OIDC token: owner@ownerId/name@repoId.
+GITHUB_REPO: ""
+
+# KEEP GitHub SECRETS IN SYNC: litellm-deploy.yml reads the following values from GitHub
+# (Settings -> Environments -> litellm-production -> Environment secrets)
+# GitHub needs the TENANT_ID, SUBSCRIPTION_ID, and a CLIENT_ID to request an OIDC token for the managed identity of the LiteLLM GitHub deploy app.
+# az account show --query tenantId -o tsv
+# az account show --query id -o tsv (subscription id)
+# Client ID (a GUID) of id-litellm-github-deploy-prod, not its name; printed by apps/litellm/deploy.sh after its first run
+AZURE_TENANT_ID: ""
+AZURE_SUBSCRIPTION_ID: ""
+LITELLM_GITHUB_DEPLOY_CLIENT_ID: ""
+
+# KEEP GitHub SECRETS IN SYNC:
+# Environment variables set by GitHub actions before running apps/litellm/main.bicep
+# <PG_INSTANCE_NAME>.postgres.database.azure.com, written out (mise doesn't expand ${...})
+PG_HOST: ""
+# Azure AI endpoint of an existing AI resource, e.g. https://<resource>.openai.azure.com
+AZURE_API_BASE: ""
+
+# ==================================================
+# LiteLLM (apps/litellm)
+# ==================================================
+
+# deploy.sh writes these two to LiteLLM's Key Vault, read directly from the Key Vault in apps/litellm/main.bicep
+# Must start with sk-, e.g. sk-$(openssl rand -hex 24)
+LITELLM_MASTER_KEY: ""
+# openssl rand -hex 32. Set ONCE, never change: encrypts stored credentials
+LITELLM_SALT_KEY: ""

@@ -1,5 +1,5 @@
-# Local test with the same image and config as Azure. Compose only reads a .env next to
-# this file, so point it at the repo's .env:  docker compose --env-file ../../.env up -d
+# Local test with the same image and config as Azure: docker compose up -d
+# Reads AZURE_API_BASE and AZURE_API_KEY from .env next to this file (see .env.example).
 # Postgres here stands in for the shared server (same per-app role/database layout).
 services:
   postgres:
@@ -24,8 +24,8 @@ services:
       LITELLM_MASTER_KEY: sk-local-test
       LITELLM_SALT_KEY: local-test-salt
       # No fallbacks: fail at startup instead of sending requests with a placeholder key.
-      AZURE_API_BASE: ${AZURE_API_BASE:?run with --env-file ../../.env}
-      AZURE_AI_API_BASE: ${AZURE_API_BASE:?run with --env-file ../../.env}/openai/v1
-      AZURE_API_KEY: ${AZURE_API_KEY:?run with --env-file ../../.env}
+      AZURE_API_BASE: ${AZURE_API_BASE:?set it in apps/litellm/.env (see .env.example)}
+      AZURE_AI_API_BASE: ${AZURE_API_BASE:?set it in apps/litellm/.env (see .env.example)}/openai/v1
+      AZURE_API_KEY: ${AZURE_API_KEY:?set it in apps/litellm/.env (see .env.example)}
     depends_on:
       postgres: { condition: service_healthy }

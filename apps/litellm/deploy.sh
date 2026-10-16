@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Admin deploy of LiteLLM. Safe to re-run.
+# Admin deploy of LiteLLM. Safe to re-run. Run via mise (mise run deploy:litellm): it sets the
+# settings from config.sops.yaml.
 #  1. setup.bicep -> secrets resource group: app identity, Key Vault, GitHub Actions identity (admin-only),
 #     plus the app identity's permission to call models on the Azure AI resource
-#  2. secrets from .env -> Key Vault, if set there and changed
+#  2. secrets from config.sops.yaml -> Key Vault, if set there and changed
 #  3. the identity's database on the shared server (add-app-db.sh)
 #  4. main.bicep -> app resource group: Container Apps environment + app (the part CI will deploy)
 #  5. custom domain: once its DNS records exist, main.bicep in stages (see customDomainStage there)
@@ -12,8 +13,8 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 ROOT=../..
-set -a; source "$ROOT/.env"; set +a
-: "${BUDGET_ALERT_EMAILS:?set BUDGET_ALERT_EMAILS in .env (email addresses for the cost alerts)}"
+: "${SHARED_RG:?settings missing: run mise run deploy:litellm}"
+: "${BUDGET_ALERT_EMAILS:?set BUDGET_ALERT_EMAILS in config.sops.yaml (email addresses for the cost alerts)}"
 
 # Resource names, defined in names.bicep (which setup.bicep and main.bicep import).
 read -r SECRETS_RG APP_RG APP_IDENTITY DB ENV CERT DOMAIN <<< "$(az bicep build -f names.bicep --stdout |
@@ -43,7 +44,7 @@ SETUP=$(az deployment group create -g "$SECRETS_RG" -n litellm-setup -f setup.bi
   --query "[properties.outputs.appIdentityPrincipalId.value, properties.outputs.keyVaultName.value, properties.outputs.githubIdentityClientId.value]" -o tsv)
 read -r APP_PRINCIPAL_ID KEYVAULT GITHUB_CLIENT_ID <<< "$(echo $SETUP)"
 
-# Writes a secret if its value is set in .env and differs from Key Vault. Retries while the
+# Writes a secret if its value is set in config.sops.yaml and differs from Key Vault. Retries while the
 # role assignment from setup.bicep is still propagating (can take a few minutes).
 # Mode "once": only written if missing; a different existing value stops the script.
 put_secret() {
@@ -57,8 +58,8 @@ put_secret() {
   [[ $state == unreachable ]] && { echo "Key Vault: can't read $name: $current" >&2; exit 1; }
   [[ $current == "$value" ]] && return 0
   if [[ $mode == once && $state == exists ]]; then
-    echo "Key Vault: $name is already set and differs from .env. Not changed: changing it makes" >&2
-    echo "everything LiteLLM encrypted in its database unreadable. Fix .env or remove the value there." >&2
+    echo "Key Vault: $name is already set and differs from config.sops.yaml. Not changed: changing it makes" >&2
+    echo "everything LiteLLM encrypted in its database unreadable. Fix config.sops.yaml or remove the value there." >&2
     exit 1
   fi
   az keyvault secret set --vault-name "$KEYVAULT" -n "$name" --file <(printf %s "$value") -o none
@@ -116,16 +117,16 @@ read -r URL _ <<< "$OUT"
 echo "Deployed: $URL  (check: curl $URL/health/readiness)"
 
 if [[ -n ${GITHUB_CLIENT_ID:-} ]]; then
-  # The values GitHub must have. Compared with .env, where the same values are kept in sync by hand.
+  # The values GitHub must have. Compared with config.sops.yaml, where the same values are kept in sync by hand.
   github_secret() {
     local note=''
-    [[ ${!1:-} == "$2" ]] || note="   <- differs from .env, update it there too"
+    [[ ${!1:-} == "$2" ]] || note="   <- differs from config.sops.yaml, update it there too"
     echo "  $1=$2$note"
   }
   echo
   echo "GitHub: Create GitHub environment 'litellm-production' for branch main and add the following (low-sensitive) secrets." 
   echo "GitHub: Configure that only branch main can deploy to it."
-  echo "GitHub: Settings -> Environments -> litellm-production. Keep in sync with .env."
+  echo "GitHub: Settings -> Environments -> litellm-production. Keep in sync with config.sops.yaml."
   echo "Environment secrets:"
   github_secret PG_HOST "$PG_HOST"
   github_secret AZURE_API_BASE "$AZURE_API_BASE"

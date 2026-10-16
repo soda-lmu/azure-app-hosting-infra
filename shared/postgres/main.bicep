@@ -15,7 +15,7 @@ param adminClientIp string
 @minValue(7)
 @maxValue(35)
 param backupRetentionDays int = 14
-@description('Comma-separated email addresses for the cost alert (BUDGET_ALERT_EMAILS in .env).')
+@description('Comma-separated email addresses for the cost alert (BUDGET_ALERT_EMAILS in config.sops.yaml).')
 param budgetAlertEmails string
 
 resource pg 'Microsoft.DBforPostgreSQL/flexibleServers@2025-08-01' = {

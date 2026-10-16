@@ -20,7 +20,7 @@ param githubRepo string = ''
 @description('Azure AI resource whose models LiteLLM calls, and its resource group (deploy.sh looks both up).')
 param aiAccountName string
 param aiResourceGroup string
-@description('Comma-separated email addresses for the cost alerts (BUDGET_ALERT_EMAILS in .env).')
+@description('Comma-separated email addresses for the cost alerts (BUDGET_ALERT_EMAILS in config.sops.yaml).')
 param budgetAlertEmails string
 
 var roles = {
@@ -57,7 +57,7 @@ resource appReadsSecrets 'Microsoft.Authorization/roleAssignments@2022-04-01' = 
   }
 }
 
-// The admin writes them (deploy.sh, from .env).
+// The admin writes them (deploy.sh, from config.sops.yaml).
 resource adminManagesSecrets 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   scope: vault
   name: guid(vault.id, adminPrincipalId, roles.keyVaultSecretsOfficer)

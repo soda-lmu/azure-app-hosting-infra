@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 # Creates or updates the shared PostgreSQL server (main.bicep). Safe to re-run; also
 # updates the admin firewall rule to the IP you're running from.
+# Run via mise (mise run deploy:postgres): it sets the settings from config.sops.yaml.
 set -euo pipefail
 cd "$(dirname "$0")"
-set -a; source ../../.env; set +a
-: "${BUDGET_ALERT_EMAILS:?set BUDGET_ALERT_EMAILS in .env (email addresses for the cost alerts)}"
+: "${SHARED_RG:?settings missing: run mise run deploy:postgres}"
+: "${BUDGET_ALERT_EMAILS:?set BUDGET_ALERT_EMAILS in config.sops.yaml (email addresses for the cost alerts)}"
 
 read -rp "The server will be deployed into resource group $SHARED_RG (created if missing). Use this name? [y/N] " answer
-[[ $answer == [yY]* ]] || { echo "Not deployed. Change SHARED_RG in .env." >&2; exit 1; }
+[[ $answer == [yY]* ]] || { echo "Not deployed. Change SHARED_RG in config.sops.yaml." >&2; exit 1; }
 
 ADMIN_GROUP=${PG_ENTRA_ADMIN_GROUP:-pg-shared-admins}
 ADMIN_GROUP_ID=$(az ad group show -g "$ADMIN_GROUP" --query id -o tsv 2>/dev/null) || {

@@ -1,4 +1,4 @@
-// Values of this installation, from .env (loaded by deploy.sh) or the GitHub environment secrets.
+// Values of this installation, from config.sops.yaml (set by mise, see mise.toml) or the GitHub environment secrets.
 // Resource names come from names.bicep. No secrets: those live in Key Vault.
 using 'main.bicep'
 
