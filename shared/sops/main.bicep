@@ -20,7 +20,7 @@ resource vault 'Microsoft.KeyVault/vaults@2024-11-01' = {
 }
 
 // Created once; re-deploying doesn't replace or update it (keyOps included). Deleting it leaves
-// only the age backup key to decrypt config.sops.env.
+// only the age backup key to decrypt the encrypted files.
 resource sopsKey 'Microsoft.KeyVault/vaults/keys@2024-11-01' = {
   parent: vault
   name: 'sops-config'

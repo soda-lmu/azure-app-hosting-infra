@@ -7,21 +7,21 @@ database and logs in with a managed identity. Defined in `main.bicep`.
 | File | Purpose |
 |---|---|
 | `main.bicep` | Server, Entra admin group, firewall rules, backups |
-| `main.bicepparam` | Parameters, read from the repo's `.env` |
+| `main.bicepparam` | Parameters, from the repo's `config.sops.yaml` (via mise) |
 | `deploy.sh` | Creates or updates the server. Safe to re-run |
 | `add-app-db.sh` | Creates an app's database and the login role for its managed identity |
 
 ## Prerequisites
-- `az` CLI with Bicep (`az bicep install`), logged in (`az login`); Docker (used to run `psql`).
+- `az` CLI with Bicep (`az bicep install`), logged in (`az login`); `mise` and `sops`; Docker (used to run `psql`).
 - You're a member of the Entra group `PG_ENTRA_ADMIN_GROUP`.
   `deploy.sh` prints how to create it if it doesn't exist. After joining, `az login` again.
-- `.env` in the repo root (see `.env.example`): `SHARED_RG`, `LOCATION`, `PG_INSTANCE_NAME` (globally
-  unique), `PG_HOST` (derived from it), `PG_SKU`, `PG_ENTRA_ADMIN_GROUP`, `PG_ADMIN_USER`, `PG_ADMIN_PASSWORD`
+- Settings in `config.sops.yaml` (see `config.template.yaml`): `SHARED_RG`, `LOCATION`, `PG_INSTANCE_NAME` (globally
+  unique), `PG_HOST` (`<PG_INSTANCE_NAME>.postgres.database.azure.com`), `PG_SKU`, `PG_ENTRA_ADMIN_GROUP`, `PG_ADMIN_USER`, `PG_ADMIN_PASSWORD`
   (`openssl rand -hex 24`), `PG_BACKUP_RETENTION_DAYS`.
 
 ## Deploy
 ```bash
-shared/postgres/deploy.sh
+mise run deploy:postgres
 ```
 Looks up the admin group and your public IP, then deploys `main.bicep`. Also the way to roll out
 later changes. Preview first with `az deployment group what-if` and the same arguments.
@@ -46,6 +46,7 @@ edition; in DBeaver Community, paste the token as the password or use the passwo
 
 Example (database of LiteLLM):
 ```bash
+PG_HOST=$(sops decrypt --extract '["PG_HOST"]' config.sops.yaml)
 psql "host=$PG_HOST port=5432 dbname=litellm_db user=pg-shared-admins sslmode=verify-full sslrootcert=system"
 ```
 Nobody can log in *as* an app's managed identity from outside: Azure only issues its tokens to
@@ -68,7 +69,7 @@ membership: `REVOKE "id-litellm-prod" FROM "pg-shared-admins";`. Once tried, upd
 
 ## Add an app
 ```bash
-shared/postgres/add-app-db.sh <database> <identity-name> <identity-principal-id>
+mise run postgres:add-app-db <database> <identity-name> <identity-principal-id>
 ```
 Creates the database, and a login role bound to the managed identity's object id with full rights
 in that database only. Other apps' roles can't connect to it. The admin group owns the database.
@@ -76,13 +77,13 @@ Safe to re-run. Apps' own deploy scripts call it (e.g. `apps/litellm/deploy.sh`)
 
 ## Costs
 Monthly Azure budget of 19 € for the server's resource group (`main.bicep`): when the actual cost
-exceeds it, the addresses in `BUDGET_ALERT_EMAILS` (from `.env`) get an email
+exceeds it, the addresses in `BUDGET_ALERT_EMAILS` (from `config.sops.yaml`) get an email
 ([`../budget.bicep`](../budget.bicep)). It only
 alerts, it doesn't stop anything.
 
 ## Network
 - Firewall: all Azure services (so Container Apps can connect), plus the IP that last ran
-  `deploy.sh`. If your IP changed, re-run it.
+  `deploy.sh`. If your IP changed, re-run it (`mise run deploy:postgres`).
 - Going private later: add a private endpoint, VNet-integrate the apps' Container Apps
   environments, then remove the "allow Azure services" rule. The server stays; Container Apps
   environments have to be recreated inside the VNet.

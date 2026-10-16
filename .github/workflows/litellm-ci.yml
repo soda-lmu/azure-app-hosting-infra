@@ -40,20 +40,9 @@ jobs:
           AZURE_API_BASE: https://example.invalid
           AZURE_API_KEY: dummy
         run: docker compose up -d --quiet-pull
-      - name: Wait for /health/liveliness and the database
-        run: |
-          for _ in $(seq 90); do
-            if curl -sf localhost:4000/health/liveliness > /dev/null &&
-               curl -sf localhost:4000/health/readiness | jq -e '.db == "connected"' > /dev/null; then
-              echo "LiteLLM is healthy"; exit 0
-            fi
-            sleep 2
-          done
-          echo "::error::LiteLLM did not become healthy within 3 minutes"; exit 1
-      - name: LiteLLM logs
-        if: failure()
+      - name: Wait for /health/liveliness and the database (same check as mise run test:litellm)
         working-directory: apps/litellm
-        env:
+        env: # docker compose logs (on failure) needs them too
           AZURE_API_BASE: https://example.invalid
           AZURE_API_KEY: dummy
-        run: docker compose logs litellm
+        run: ./health-check.sh

@@ -1,5 +1,5 @@
 // Cost budget for the resource group this module is deployed to. Budgets only send alerts, they
-// don't stop spending. Alerts go to contactEmails (from .env: BUDGET_ALERT_EMAILS, so no address
+// don't stop spending. Alerts go to contactEmails (from config.sops.yaml: BUDGET_ALERT_EMAILS, so no address
 // is in git).
 param name string
 @description('Whole units of the billing currency (EUR): Azure accepts integers only.')

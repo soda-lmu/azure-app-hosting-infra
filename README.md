@@ -6,14 +6,18 @@ Renovate and GitHub Actions.
 | Part | What | README |
 |---|---|---|
 | `shared/postgres/` | PostgreSQL 18 server shared by several apps, one database per app | [shared/postgres/README.md](shared/postgres/README.md) |
-| `shared/sops/` | Key Vault key for SOPS: secret files committed encrypted, e.g. the settings `config.sops.env` | [shared/sops/README.md](shared/sops/README.md) |
+| `shared/sops/` | Key Vault key for SOPS: secret files committed encrypted, e.g. the settings `config.sops.yaml` | [shared/sops/README.md](shared/sops/README.md) |
 | `apps/litellm/` | LiteLLM proxy with budget-limited keys in front of Azure OpenAI | [apps/litellm/README.md](apps/litellm/README.md) |
 
 ## Getting started
-1. `cp .env.example .env` and fill it in. `.env` is gitignored and is the only place for local
-   secrets; the `.bicepparam` files and scripts read it.
-2. Deploy the [shared PostgreSQL server](shared/postgres/README.md#deploy), then
+1. Install [mise](https://mise.jdx.dev), `sops` and the `az` CLI, then `mise trust` in the repo.
+2. The settings are in `config.sops.yaml`, encrypted with SOPS (template: `config.template.yaml`).
+   The deploy scripts get them from mise: `mise run <task>` (list: `mise tasks`, defined in
+   `mise.toml`). To create the file and its key, see [shared/sops](shared/sops/README.md).
+3. Deploy the [shared PostgreSQL server](shared/postgres/README.md#deploy), then
    [LiteLLM](apps/litellm/README.md#deploy).
+
+`.env` files are only for the local docker compose test (`apps/litellm/.env`).
 
 ## Repository rules
 Needed for automatic updates. Private repos need GitHub Pro, Team or Enterprise for rulesets.

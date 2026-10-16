@@ -1,0 +1,48 @@
+# Admin tasks: mise run <task>, e.g. mise run deploy:postgres (list: mise tasks).
+
+# The deploy tasks get the settings from config.sops.yaml as environment variables, decrypted with sops
+# (shared/sops/README.md).
+
+[settings]
+# mise's built-in decrypter can't use the Azure Key Vault key or post-quantum age keys.
+sops.rops = false
+
+[tasks."test:litellm"]
+description = "Start LiteLLM locally (docker compose, apps/litellm/.env), check it like CI and call every model"
+# No config.sops.yaml: the local test only uses apps/litellm/.env.
+dir = "apps/litellm"
+run = [
+  "test -f .env || { echo 'Create apps/litellm/.env first (see .env.example)' >&2; exit 1; }",
+  "docker compose up -d --quiet-pull",
+  "./health-check.sh --models",
+  "echo 'Running on http://localhost:4000 (master key sk-local-test). Stop: cd apps/litellm && docker compose down'",
+]
+
+[tasks."deploy:sops"]
+description = "Key Vault key for SOPS (shared/sops)"
+env = { _.file = "config.sops.yaml" }
+raw = true
+run = "shared/sops/deploy.sh"
+
+[tasks."deploy:postgres"]
+description = "Shared PostgreSQL server (shared/postgres)"
+env = { _.file = "config.sops.yaml" }
+raw = true
+run = "shared/postgres/deploy.sh"
+
+[tasks."deploy:litellm"]
+description = "LiteLLM (apps/litellm)"
+env = { _.file = "config.sops.yaml" }
+raw = true
+run = "apps/litellm/deploy.sh"
+
+[tasks."postgres:add-app-db"]
+description = "Database and login role for an app's managed identity. Usually run by a deploy task."
+# No prompts, so not raw: mise can mask the settings' values in the output.
+env = { _.file = { path = "config.sops.yaml", redact = true } }
+usage = '''
+arg "<database>" help="Database to create, e.g. litellm_db"
+arg "<identity_name>" help="Managed identity's name, e.g. id-litellm-prod"
+arg "<principal_id>" help="Managed identity's principal (object) id"
+'''
+run = 'shared/postgres/add-app-db.sh "$usage_database" "$usage_identity_name" "$usage_principal_id"'

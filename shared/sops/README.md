@@ -1,7 +1,7 @@
 # SOPS key
 
 Azure Key Vault key for [SOPS](https://github.com/getsops/sops), so secret files can be committed
-encrypted (e.g. the repo's settings, `config.sops.env`). In the shared resource group
+encrypted (e.g. the repo's settings, `config.sops.yaml`). In the shared resource group
 (`SHARED_RG`). Only members of the Entra group `PG_ENTRA_ADMIN_GROUP` may use the key; no app and
 not GitHub Actions. Defined in `main.bicep`.
 
@@ -18,23 +18,30 @@ needs all keys of a file's rule, decrypting any one:
   its private key offline: whoever can read it decrypts without Key Vault.
 
 ## Prerequisites
-- `az` CLI with Bicep, logged in (`az login`); `sops`.
+- `az` CLI with Bicep, logged in (`az login`); `sops`; `mise` (runs the scripts).
 - You're a member of the Entra group `PG_ENTRA_ADMIN_GROUP` (see
   [shared/postgres](../postgres/README.md#prerequisites)).
-- `SHARED_RG`, `LOCATION`, `PG_ENTRA_ADMIN_GROUP` in `.env` or `config.sops.env`.
+- `SHARED_RG`, `LOCATION`, `PG_ENTRA_ADMIN_GROUP` in `config.sops.yaml`.
+- Outside Azure, if sops fails with `ManagedIdentityCredential authentication failed`:
+  `export AZURE_TOKEN_CREDENTIALS=AzureCliCredential` (e.g. in `~/.bashrc`).
 
 ## Deploy
 ```bash
-shared/sops/deploy.sh
+mise run deploy:sops
 ```
 Prints the key URL. If `.sops.yaml` doesn't contain it yet, put it there (`azure_keyvault`).
 
+**First install:** the task needs `config.sops.yaml`, but the Key Vault key doesn't exist yet.
+Comment out `azure_keyvault` in `.sops.yaml`, create `config.sops.yaml` (below; encrypted with the
+age key only), run the task, put the key URL back in, then `sops updatekeys config.sops.yaml`.
+
 ## Use
-Encrypt a file the first time, check, then remove the plain-text copy. SOPS picks the rule by the
-*input* file name, hence `--filename-override`. For the settings:
+Create an encrypted file from a template, then fill in the values. The plain text never lands on
+disk. SOPS picks the rule by the *input* file name, hence `--filename-override`. For the settings
+(template: `config.template.yaml`):
 ```bash
-sops encrypt --filename-override config.sops.env .env > config.sops.env
-diff <(sops decrypt config.sops.env) <(grep -v '^$' .env) && rm .env  # sops drops blank lines
+sops encrypt --filename-override config.sops.yaml config.template.yaml > config.sops.yaml
+sops edit config.sops.yaml
 ```
 Afterwards, for any encrypted `<file>`:
 ```bash

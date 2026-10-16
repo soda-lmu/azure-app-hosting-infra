@@ -4,9 +4,10 @@
 # <identity-name> (object/principal id <identity-principal-id>) a login role with full
 # rights in it, and no access to other apps' databases. Idempotent.
 # Runs as an Entra admin: you must be a member of PG_ENTRA_ADMIN_GROUP and logged in (az login).
+# Run via mise (mise run postgres:add-app-db <args>), or from a script mise runs: needs PG_HOST and
+# PG_ENTRA_ADMIN_GROUP from config.sops.yaml.
 set -euo pipefail
-cd "$(dirname "$0")/../.."
-set -a; source .env; set +a
+: "${PG_HOST:?settings missing: run mise run postgres:add-app-db}"
 
 DB=${1:?database name}
 ROLE=${2:?managed identity name}

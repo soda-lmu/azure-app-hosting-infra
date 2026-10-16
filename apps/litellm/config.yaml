@@ -2,6 +2,7 @@
 # Deployed as a Container Apps secret (loadTextContent in main.bicep), mounted at /mnt/secrets/litellm-config.
 model_list:
   - model_name: text-embedding-ada-002
+    model_info: { mode: embedding }
     litellm_params:
       model: azure/text-embedding-ada-002   # azure/<deployment-name>; priced from LiteLLM's table
       api_base: os.environ/AZURE_API_BASE
@@ -38,7 +39,7 @@ model_list:
 litellm_settings:
   # Without an API key (as in Azure: AZURE_API_KEY isn't set there), LiteLLM gets Entra tokens for
   # Azure AI through the managed identity (AZURE_CREDENTIAL, AZURE_CLIENT_ID) and renews them.
-  # Locally, with AZURE_API_KEY from .env, the key is used instead.
+  # Locally, with AZURE_API_KEY from apps/litellm/.env (docker compose), the key is used instead.
   enable_azure_ad_token_refresh: true
 
 general_settings:

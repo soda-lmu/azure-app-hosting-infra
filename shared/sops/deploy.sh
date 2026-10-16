@@ -1,18 +1,13 @@
 #!/usr/bin/env bash
 # Creates or updates the Key Vault to work with SOPS (main.bicep). Safe to re-run.
-# Reads SHARED_RG, LOCATION and PG_ENTRA_ADMIN_GROUP from .env or, once that is encrypted,
-# from config.sops.env.
+# Run via mise (mise run deploy:sops): it sets SHARED_RG, LOCATION and PG_ENTRA_ADMIN_GROUP
+# from config.sops.yaml.
 set -euo pipefail
 cd "$(dirname "$0")"
-if [[ -f ../../.env ]]; then
-  settings=$(< ../../.env)
-else
-  settings=$(sops decrypt ../../config.sops.env) # assignment, so a failure stops the script
-fi
-set -a; source /dev/stdin <<< "$settings"; set +a
+: "${SHARED_RG:?settings missing: run mise run deploy:sops}"
 
 read -rp "The Key Vault will be deployed into resource group $SHARED_RG (created if missing). Use this name? [y/N] " answer
-[[ $answer == [yY]* ]] || { echo "Not deployed. Change SHARED_RG in the settings." >&2; exit 1; }
+[[ $answer == [yY]* ]] || { echo "Not deployed. Change SHARED_RG in config.sops.yaml." >&2; exit 1; }
 
 ADMIN_GROUP=${PG_ENTRA_ADMIN_GROUP:-pg-shared-admins}
 ADMIN_GROUP_ID=$(az ad group show -g "$ADMIN_GROUP" --query id -o tsv 2>/dev/null) || {
@@ -27,4 +22,4 @@ KEY_URL=$(az deployment group create -g "$SHARED_RG" -n sops -p main.bicepparam 
 
 echo "SOPS key: $KEY_URL (usable by the members of $ADMIN_GROUP)"
 grep -qF "$KEY_URL" ../../.sops.yaml ||
-  echo "Set azure_keyvault in .sops.yaml to this URL (and, if config.sops.env exists: sops updatekeys config.sops.env)." >&2
+  echo "Set azure_keyvault in .sops.yaml to this URL (and run sops updatekeys on the encrypted files)." >&2
