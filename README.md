@@ -1,7 +1,8 @@
 # Azure apps: shared PostgreSQL and LiteLLM
 
 Infrastructure as Bicep, deployed with small scripts; LiteLLM is updated automatically via
-Renovate and GitHub Actions.
+Renovate and GitHub Actions. Why it is built this way, and where it falls short:
+[overview.md](overview.md).
 
 | Part | What | README |
 |---|---|---|
