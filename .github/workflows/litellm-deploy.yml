@@ -46,13 +46,17 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      # The custom domain's certificate is created by apps/litellm/deploy.sh (admin). Until it's
-      # issued, deploy without the domain instead of failing. Runs before anything is deployed:
+      # The custom domain's certificate is created by apps/litellm/deploy.sh (admin). Without one,
+      # deploy without the domain; while it's being issued, stop. Runs before anything is deployed:
       # if Azure can't be asked, the job stops here rather than guess (which could remove the domain).
       - name: Custom domain stage (apps/litellm/domain-stage.sh)
         run: |
           out=$(apps/litellm/domain-stage.sh)
           read -r stage reason <<< "$out"
+          if [[ $stage == hostname ]]; then # deploy.sh is having the certificate issued; don't interfere
+            echo "::error::Certificate $LITELLM_CERT is still being issued (apps/litellm/deploy.sh). Nothing deployed: re-run this workflow once it's issued."
+            exit 1
+          fi
           [[ $stage != none ]] ||
             echo "::warning::Custom domain not ready (certificate $LITELLM_CERT: $reason): deploying without it. Run apps/litellm/deploy.sh."
           echo "LITELLM_CUSTOM_DOMAIN_STAGE=$stage" >> "$GITHUB_ENV"
@@ -93,8 +97,9 @@ jobs:
           git checkout "$DEPLOYED_COMMIT" -- apps/litellm
           cd apps/litellm
           LITELLM_APP_RG=$(az bicep build -f names.bicep --stdout | jq -r .variables.names.appResourceGroup)
-          out=$(./domain-stage.sh)
-          export LITELLM_CUSTOM_DOMAIN_STAGE=${out%% *}
+          # The stage for that commit's names; if that fails (or the commit predates domain-stage.sh),
+          # the stage determined for this deploy.
+          if out=$(./domain-stage.sh); then export LITELLM_CUSTOM_DOMAIN_STAGE=${out%% *}; fi
           az deployment group create -g "$LITELLM_APP_RG" -n litellm -p main.bicepparam -o none
           echo "::error::Rolled back to $DEPLOYED_COMMIT"
 
@@ -104,10 +109,15 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           ROLLBACK_COMMIT: ${{ steps.before.outputs.commit }}
         run: |
+          if [[ -z $ROLLBACK_COMMIT ]]; then
+            next="It failed before deploying (or no earlier commit was known): see the run for the failed step."
+          else
+            next="main still contains the failed change: revert it, or fix it forward."
+          fi
           gh issue create --repo "${{ github.repository }}" --assignee "${{ vars.NOTIFY_USER || github.repository_owner }}" \
             --title "Deploy of ${GITHUB_SHA::7} failed" \
             --body "The deploy of ${{ github.sha }} failed (see the run).
           Rollback to \`$ROLLBACK_COMMIT\`: ${{ steps.rollback.outcome }}.
           Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
-          main still contains the failed change: revert it, or fix it forward."
+          $next"
