@@ -46,25 +46,26 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
+      # The custom domain's certificate is created by apps/litellm/deploy.sh (admin). Until it's
+      # issued, deploy without the domain instead of failing. Runs before anything is deployed:
+      # if Azure can't be asked, the job stops here rather than guess (which could remove the domain).
+      - name: Custom domain stage (apps/litellm/domain-stage.sh)
+        run: |
+          out=$(apps/litellm/domain-stage.sh)
+          read -r stage reason <<< "$out"
+          [[ $stage != none ]] ||
+            echo "::warning::Custom domain not ready (certificate $LITELLM_CERT: $reason): deploying without it. Run apps/litellm/deploy.sh."
+          echo "LITELLM_CUSTOM_DOMAIN_STAGE=$stage" >> "$GITHUB_ENV"
+
       - name: Remember the running commit
         id: before
         run: |
           commit=$(az containerapp show -n "$LITELLM_CONTAINERAPP" -g "$LITELLM_APP_RG" --query tags.commit -o tsv 2>/dev/null || true)
           # Fall back to the previous main if the running one isn't a known commit (e.g. "-dirty").
-          git cat-file -e "${commit}^{commit}" 2>/dev/null || commit=${{ github.event.before }}
+          # rev-parse turns the tag (set in Azure, so untrusted) into a plain commit hash.
+          commit=$(git rev-parse -q --verify --end-of-options "${commit}^{commit}") || commit=${{ github.event.before }}
           echo "commit=$commit" >> "$GITHUB_OUTPUT"
           echo "Running before deploy: $commit"
-
-      # The custom domain's certificate is created by apps/litellm/deploy.sh (admin). Until then,
-      # deploy without the domain instead of failing. Also applies to the rollback below.
-      - name: Check the custom domain certificate
-        run: |
-          state=$(az containerapp env certificate list -g "$LITELLM_APP_RG" -n "$LITELLM_ENV" --managed-certificates-only \
-            --query "[?name=='$LITELLM_CERT'] | [0].properties.provisioningState" -o tsv 2>/dev/null || true)
-          if [[ $state == Succeeded ]]; then stage=bound; else stage=none
-            echo "::warning::Certificate $LITELLM_CERT not ready ('$state'): deploying without the custom domain. Run apps/litellm/deploy.sh."
-          fi
-          echo "LITELLM_CUSTOM_DOMAIN_STAGE=$stage" >> "$GITHUB_ENV"
 
       - name: Deploy main.bicep
         working-directory: apps/litellm
@@ -91,7 +92,9 @@ jobs:
         run: |
           git checkout "$DEPLOYED_COMMIT" -- apps/litellm
           cd apps/litellm
-          LITELLM_APP_RG=$(az bicep build -f names.bicep --stdout | jq -r .variables.names.appResourceGroup) # as of that commit
+          LITELLM_APP_RG=$(az bicep build -f names.bicep --stdout | jq -r .variables.names.appResourceGroup)
+          out=$(./domain-stage.sh)
+          export LITELLM_CUSTOM_DOMAIN_STAGE=${out%% *}
           az deployment group create -g "$LITELLM_APP_RG" -n litellm -p main.bicepparam -o none
           echo "::error::Rolled back to $DEPLOYED_COMMIT"
 
@@ -99,11 +102,12 @@ jobs:
         if: failure()
         env:
           GH_TOKEN: ${{ github.token }}
+          ROLLBACK_COMMIT: ${{ steps.before.outputs.commit }}
         run: |
           gh issue create --repo "${{ github.repository }}" --assignee "${{ vars.NOTIFY_USER || github.repository_owner }}" \
             --title "Deploy of ${GITHUB_SHA::7} failed" \
-            --body "The deploy of ${{ github.sha }} failed its health check.
-          Rollback to \`${{ steps.before.outputs.commit }}\`: ${{ steps.rollback.outcome }}.
+            --body "The deploy of ${{ github.sha }} failed (see the run).
+          Rollback to \`$ROLLBACK_COMMIT\`: ${{ steps.rollback.outcome }}.
           Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
           main still contains the failed change: revert it, or fix it forward."

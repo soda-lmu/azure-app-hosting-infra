@@ -8,13 +8,13 @@
       "customType": "regex",
       "description": "Container image in Bicep files (not a format Renovate knows natively)",
       "managerFilePatterns": ["/\\.bicep$/"],
-      "matchStrings": ["image: '(?<depName>[^':]+):(?<currentValue>[\\w.-]+)'"],
+      "matchStrings": ["image: '(?<depName>[^':@]+):(?<currentValue>[\\w.-]+)(?:@(?<currentDigest>sha256:[a-f0-9]+))?'"],
       "datasourceTemplate": "docker"
     }
   ],
   "packageRules": [
     {
-      "description": "LiteLLM: PR opened twice a month (1st and 15th, 01:00-07:00), merged by GitHub auto-merge once CI passes; the deploy workflow rolls it out. Versions and release dates are looked up on Docker Hub (litellm/litellm-database, the same images as on ghcr.io), because ghcr.io has no publish dates; the files keep pulling from ghcr.io",
+      "description": "LiteLLM: PR opened twice a month (1st and 15th, 01:00-07:00), merged by GitHub auto-merge once CI passes; the deploy workflow rolls it out. Versions, release dates and digests are looked up on Docker Hub (litellm/litellm-database, the same images and digests as on ghcr.io), because ghcr.io has no publish dates; the files keep pulling from ghcr.io",
       "matchPackageNames": ["ghcr.io/berriai/litellm-database"],
       "groupName": "litellm image",
       "schedule": ["* 1-6 1,15 * *"],
@@ -22,6 +22,12 @@
       "minimumReleaseAge": "15 days",
       "automerge": true,
       "automergeType": "pr"
+    },
+    {
+      "description": "LiteLLM: a new digest for the same tag means the tag was re-pushed; that waits for a human review",
+      "matchPackageNames": ["ghcr.io/berriai/litellm-database"],
+      "matchUpdateTypes": ["digest"],
+      "automerge": false
     },
     {
       "description": "GitHub Actions: all updates bundled into one PR, opened once a month (1st, 01:00-07:00), merged by GitHub auto-merge once CI passes",

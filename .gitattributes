@@ -1,1 +1,3 @@
 *.sops.* diff=sops
+# The plaintext SOPS config matches *.sops.* too
+.sops.yaml !diff

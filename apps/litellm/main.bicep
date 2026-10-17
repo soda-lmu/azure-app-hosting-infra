@@ -10,7 +10,7 @@ param azureApiBase string
 @description('Git commit being deployed; stored as a tag so a failed deploy can roll back to it.')
 param deployedCommit string = 'unknown'
 // Azure only issues a managed certificate for a hostname already on the app, so the custom
-// domain is set up in stages (deploy.sh runs them; CI deploys 'bound' once the certificate exists):
+// domain is set up in stages (deploy.sh runs them; CI deploys the stage domain-stage.sh picks):
 @description('''Custom domain (names.customDomain) setup stage:
 none: no custom domain.
 hostname: add the hostname to the app without a certificate, then create the managed certificate for it.
@@ -20,7 +20,7 @@ param customDomainStage string = 'bound'
 
 var config = loadTextContent('config.yaml')
 var domainStage = empty(names.customDomain) ? 'none' : customDomainStage
-var customDomain = domainStage == 'bound'
+var domainBound = domainStage == 'bound'
 
 resource appIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' existing = {
   name: names.appIdentity
@@ -90,7 +90,8 @@ resource app 'Microsoft.App/containerApps@2025-01-01' = {
       containers: [
         {
           name: 'litellm'
-          image: 'ghcr.io/berriai/litellm-database:v1.105.0'
+          // Tag and digest: a re-pushed tag can't change what runs. Renovate updates both.
+          image: 'ghcr.io/berriai/litellm-database:v1.105.0@sha256:f99e4cc55ce8a1c6888504ac6eff147868979d37363a7246cf804bbabdc27e88'
           args: ['--config', '/mnt/secrets/litellm-config', '--port', '4000']
           resources: { cpu: json('1.0'), memory: '2Gi' }
           env: [
@@ -112,7 +113,7 @@ resource app 'Microsoft.App/containerApps@2025-01-01' = {
             { name: 'DATABASE_NAME', value: names.database }
             { name: 'DATABASE_SSLMODE', value: 'verify-full' }
             // Links in the admin UI (and SSO redirects) point here.
-            ...(customDomain ? [{ name: 'PROXY_BASE_URL', value: 'https://${names.customDomain}' }] : [])
+            ...(domainBound ? [{ name: 'PROXY_BASE_URL', value: 'https://${names.customDomain}' }] : [])
             // Secret changes alone don't start a new revision. This hash changes with the
             // config, so a new revision rolls out exactly when config.yaml changes.
             { name: 'CONFIG_HASH', value: uniqueString(config) }
@@ -152,7 +153,7 @@ resource certificate 'Microsoft.App/managedEnvironments/managedCertificates@2025
   dependsOn: [app]
 }
 
-output url string = 'https://${customDomain ? names.customDomain : app.properties.configuration.ingress.fqdn}'
+output url string = 'https://${domainBound ? names.customDomain : app.properties.configuration.ingress.fqdn}'
 // For the DNS records of the custom domain (deploy.sh).
 output fqdn string = app.properties.configuration.ingress.fqdn
 output domainVerificationId string = app.properties.customDomainVerificationId
