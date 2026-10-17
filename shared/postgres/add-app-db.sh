@@ -7,7 +7,8 @@
 # Run via mise (mise run postgres:add-app-db <args>), or from a script mise runs: needs PG_HOST and
 # PG_ENTRA_ADMIN_GROUP from config.sops.yaml.
 set -euo pipefail
-: "${PG_HOST:?settings missing: run mise run postgres:add-app-db}"
+: "${PG_HOST?settings missing: run mise run postgres:add-app-db}"
+: "${PG_HOST:?set PG_HOST in config.sops.yaml}"
 
 DB=${1:?database name}
 ROLE=${2:?managed identity name}

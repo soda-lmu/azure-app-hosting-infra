@@ -42,7 +42,14 @@ jobs:
         run: docker compose up -d --quiet-pull
       - name: Wait for /health/liveliness and the database (same check as mise run test:litellm)
         working-directory: apps/litellm
-        env: # docker compose logs (on failure) needs them too
+        env: # docker-compose.yml needs them for any compose command
           AZURE_API_BASE: https://example.invalid
           AZURE_API_KEY: dummy
         run: ./health-check.sh
+      - name: Logs (also if docker compose up failed)
+        if: failure()
+        working-directory: apps/litellm
+        env:
+          AZURE_API_BASE: https://example.invalid
+          AZURE_API_KEY: dummy
+        run: docker compose logs

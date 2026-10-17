@@ -7,7 +7,7 @@
 #  3. the identity's database on the shared server (add-app-db.sh)
 #  4. main.bicep -> app resource group: Container Apps environment + app (the part CI will deploy)
 #  5. custom domain: once its DNS records exist, main.bicep in stages (see customDomainStage there)
-#     to add the hostname and its certificate, then to serve the domain with it
+#     to add the hostname and its certificate, then to serve the domain with it (domain-stage.sh)
 # Resource names come from names.bicep. Requires shared/postgres/deploy.sh to have run once, and
 # you in the PG admin group.
 set -euo pipefail
@@ -17,8 +17,10 @@ ROOT=../..
 : "${BUDGET_ALERT_EMAILS:?set BUDGET_ALERT_EMAILS in config.sops.yaml (email addresses for the cost alerts)}"
 
 # Resource names, defined in names.bicep (which setup.bicep and main.bicep import).
-read -r SECRETS_RG APP_RG APP_IDENTITY DB ENV CERT DOMAIN <<< "$(az bicep build -f names.bicep --stdout |
-  jq -r '.variables.names | "\(.secretsResourceGroup) \(.appResourceGroup) \(.appIdentity) \(.database) \(.containerAppEnvironment) \(.customDomainCertificate) \(.customDomain)"')"
+# Assigned first: a failed build in a here-string wouldn't stop the script.
+NAMES=$(az bicep build -f names.bicep --stdout | jq -r '.variables.names |
+  "\(.secretsResourceGroup) \(.appResourceGroup) \(.appIdentity) \(.database) \(.containerAppEnvironment) \(.customDomainCertificate) \(.customDomain)"')
+read -r SECRETS_RG APP_RG APP_IDENTITY DB ENV CERT DOMAIN <<< "$NAMES"
 
 cat <<EOF
 LiteLLM will be deployed into these resource groups (created if missing):
@@ -79,34 +81,46 @@ deploy_app() {
   LITELLM_CUSTOM_DOMAIN_STAGE=$1 az deployment group create -g "$APP_RG" -n litellm -p main.bicepparam \
     --query "properties.outputs.[url.value, fqdn.value, domainVerificationId.value]" -o tsv | xargs
 }
-# Provisioning state of the custom domain's certificate; empty if it (or the environment) is missing.
-cert_state() {
-  az containerapp env certificate list -g "$APP_RG" -n "$ENV" --managed-certificates-only \
-    --query "[?name=='$CERT'] | [0].properties.provisioningState" -o tsv 2>/dev/null || true
+# Stops the script if DNS can't be asked (dig prints its error to stdout).
+dns_lookup() { # $1: record type, $2: name
+  local out
+  out=$(dig +short "$1" "$2") || { echo "Custom domain: DNS lookup of $2 failed: $out" >&2; exit 1; }
+  echo "$out"
 }
+lower() { tr '[:upper:]' '[:lower:]'; } # not ${x,,}: macOS has bash 3.2
 
-if [[ -z $DOMAIN || $(cert_state) == Succeeded ]]; then
+STAGE_REASON=$(./domain-stage.sh)
+read -r STAGE REASON <<< "$STAGE_REASON"
+if [[ $STAGE == bound ]]; then
   OUT=$(deploy_app bound)
+elif [[ $REASON == other-domain ]]; then
+  echo "Custom domain: certificate $CERT is for another hostname than $DOMAIN. Give customDomainCertificate" >&2
+  echo "a new name in names.bicep (README, \"Custom domain\")." >&2
+  exit 1
 else
   # The app only accepts the hostname once DNS points to it and proves ownership. So: deploy
   # without the domain (gives the record values), check DNS, then the stages hostname and bound.
   OUT=$(deploy_app none)
   read -r URL FQDN VERIFICATION_ID <<< "$OUT"
-  cname=$(dig +short CNAME "$DOMAIN")
-  if [[ ${cname,,} != "${FQDN,,}." || $(dig +short TXT "asuid.$DOMAIN") != *"$VERIFICATION_ID"* ]]; then
+  cname=$(dns_lookup CNAME "$DOMAIN")
+  txt=$(dns_lookup TXT "asuid.$DOMAIN")
+  if [[ $(lower <<< "$cname") != "$(lower <<< "$FQDN.")" || $txt != *"$VERIFICATION_ID"* ]]; then
     echo "Custom domain: not set up yet. Create these DNS records, then re-run deploy.sh:"
     echo "  $DOMAIN  CNAME  $FQDN"
     echo "  asuid.$DOMAIN  TXT  $VERIFICATION_ID"
   else
     OUT=$(deploy_app hostname)
     echo "Custom domain: waiting for the certificate of $DOMAIN (usually a few minutes)"
-    for _ in $(seq 90); do # up to 15 minutes
-      state=$(cert_state)
-      [[ $state == Pending || -z $state ]] || break
+    SECONDS=0
+    while (( SECONDS < 900 )); do # up to 15 minutes (each check takes a few seconds itself)
+      # A failed lookup (its error is printed) doesn't end the wait: the next poll may succeed.
+      STAGE_REASON=$(./domain-stage.sh) || STAGE_REASON="none lookup-failed"
+      read -r STAGE REASON <<< "$STAGE_REASON"
+      [[ $REASON == Pending || $REASON == lookup-failed ]] || break
       sleep 10
     done
-    if [[ $state != Succeeded ]]; then
-      echo "Custom domain: certificate $CERT is '$state'. Check the DNS records, then delete it" >&2
+    if [[ $STAGE != bound ]]; then
+      echo "Custom domain: certificate $CERT is '$REASON'. Check the DNS records, then delete it" >&2
       echo "(az containerapp env certificate delete -g $APP_RG -n $ENV -c $CERT) and re-run." >&2
       exit 1
     fi

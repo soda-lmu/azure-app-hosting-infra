@@ -1,6 +1,6 @@
-# Shared PostgreSQL: checks the server's Bicep on every PR. Required status check in the main
-# ruleset, so no path filter (a required check that doesn't run would block the PR).
-# Deploying the shared server stays manual (shared/postgres/deploy.sh, admins only).
+# Shared PostgreSQL and SOPS Key Vault (shared/): checks their Bicep on every PR. Required status
+# check in the main ruleset, so no path filter (a required check that doesn't run would block the PR).
+# Deploying them stays manual (mise run deploy:postgres / deploy:sops, admins only).
 name: Shared PostgreSQL CI
 
 on:
@@ -26,8 +26,10 @@ jobs:
           BUDGET_ALERT_EMAILS: ci@example.invalid
         run: |
           az bicep install
-          for f in $(git ls-files 'shared/postgres/*.bicep'); do
+          for f in $(git ls-files 'shared/*.bicep'); do
             az bicep lint --file "$f"
             az bicep build --file "$f" --stdout > /dev/null
           done
-          az bicep build-params --file shared/postgres/main.bicepparam --stdout > /dev/null
+          for f in $(git ls-files 'shared/*.bicepparam'); do
+            az bicep build-params --file "$f" --stdout > /dev/null
+          done

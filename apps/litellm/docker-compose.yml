@@ -14,9 +14,9 @@ services:
       retries: 30
 
   litellm:
-    image: ghcr.io/berriai/litellm-database:v1.105.0
+    image: ghcr.io/berriai/litellm-database:v1.105.0@sha256:f99e4cc55ce8a1c6888504ac6eff147868979d37363a7246cf804bbabdc27e88
     command: ["--config", "/mnt/secrets/litellm-config", "--port", "4000"]
-    ports: ["4000:4000"]
+    ports: ["127.0.0.1:4000:4000"]
     volumes:
       - ./config.yaml:/mnt/secrets/litellm-config:ro
     environment:
