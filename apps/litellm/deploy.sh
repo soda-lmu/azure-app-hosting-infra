@@ -93,6 +93,10 @@ STAGE_REASON=$(./domain-stage.sh)
 read -r STAGE REASON <<< "$STAGE_REASON"
 if [[ $STAGE == bound ]]; then
   OUT=$(deploy_app bound)
+elif [[ $REASON == Pending ]]; then
+  # Deploying 'none' now would take the hostname away that the certificate is being issued for.
+  echo "Custom domain: certificate $CERT for $DOMAIN is still being issued. Re-run deploy.sh in a few minutes." >&2
+  exit 1
 elif [[ $REASON == other-domain ]]; then
   echo "Custom domain: certificate $CERT is for another hostname than $DOMAIN. Give customDomainCertificate" >&2
   echo "a new name in names.bicep (README, \"Custom domain\")." >&2
@@ -113,10 +117,10 @@ else
     echo "Custom domain: waiting for the certificate of $DOMAIN (usually a few minutes)"
     SECONDS=0
     while (( SECONDS < 900 )); do # up to 15 minutes (each check takes a few seconds itself)
-      # A failed lookup (its error is printed) doesn't end the wait: the next poll may succeed.
+      # A failed lookup (its error is printed) or a certificate not listed yet doesn't end the wait.
       STAGE_REASON=$(./domain-stage.sh) || STAGE_REASON="none lookup-failed"
       read -r STAGE REASON <<< "$STAGE_REASON"
-      [[ $REASON == Pending || $REASON == lookup-failed ]] || break
+      [[ $REASON == Pending || $REASON == lookup-failed || $REASON == missing ]] || break
       sleep 10
     done
     if [[ $STAGE != bound ]]; then
