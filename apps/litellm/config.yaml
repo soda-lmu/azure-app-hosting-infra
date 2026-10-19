@@ -37,6 +37,7 @@ model_list:
       api_key: os.environ/AZURE_API_KEY
 
 litellm_settings:
+  cache: false
   # Without an API key (as in Azure: AZURE_API_KEY isn't set there), LiteLLM gets Entra tokens for
   # Azure AI through the managed identity (AZURE_CREDENTIAL, AZURE_CLIENT_ID) and renews them.
   # Locally, with AZURE_API_KEY from apps/litellm/.env (docker compose), the key is used instead.
