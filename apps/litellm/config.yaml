@@ -30,11 +30,17 @@ model_list:
       model: azure_ai/DeepSeek-V4-Flash-0731   # azure_ai/<deployment-name>
       api_base: os.environ/AZURE_AI_API_BASE   # AZURE_API_BASE + /openai/v1, set in main.bicep
       api_key: os.environ/AZURE_API_KEY
+      # LiteLLM's azure_ai provider doesn't list reasoning_effort as supported, so drop_params
+      # would silently remove it. Azure accepts it and DeepSeek then reasons.
+      allowed_openai_params: ["reasoning_effort"]
   - model_name: gpt-oss-120b
     litellm_params:
       model: azure_ai/gpt-oss-120b         # priced only under azure_ai/, like DeepSeek above
       api_base: os.environ/AZURE_AI_API_BASE
       api_key: os.environ/AZURE_API_KEY
+      # LiteLLM's azure_ai provider doesn't list reasoning_effort as supported, so drop_params
+      # would silently remove it. Azure accepts it.
+      allowed_openai_params: ["reasoning_effort"]
 
 litellm_settings:
   cache: false
