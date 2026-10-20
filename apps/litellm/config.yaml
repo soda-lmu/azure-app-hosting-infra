@@ -35,7 +35,6 @@ model_list:
       allowed_openai_params: ["reasoning_effort"]
       # Tokens per minute rate limit. Works jointly with enforce_model_rate_limits below.
       tpm: 930000
-      timeout: 600
   - model_name: gpt-oss-120b
     litellm_params:
       model: azure_ai/gpt-oss-120b         # priced only under azure_ai/, like DeepSeek above
@@ -55,6 +54,13 @@ litellm_settings:
 router_settings:
   # Enforce tpm/rpm. Over the limit, the proxy answers 429 (retry-after 60) without calling Azure.
   optional_pre_call_checks: ["enforce_model_rate_limits"]
+  # Container Apps' HTTP ingress cuts every request after 240 s (fixed, not configurable).
+  # Give up on Azure before that, so the client gets a 408 instead of a 504
+  timeout: 235
+  # A retry after a timeout would run past the 240 s limit.
+  retry_policy: {
+    TimeoutErrorRetries: 0
+  }
 
 general_settings:
   # Never store prompts and responses in the spend logs (LiteLLM's default, made explicit: set
