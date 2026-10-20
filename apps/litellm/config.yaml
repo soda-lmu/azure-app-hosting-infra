@@ -35,6 +35,7 @@ model_list:
       allowed_openai_params: ["reasoning_effort"]
       # Tokens per minute rate limit. Works jointly with enforce_model_rate_limits below.
       tpm: 930000
+      timeout: 600
   - model_name: gpt-oss-120b
     litellm_params:
       model: azure_ai/gpt-oss-120b         # priced only under azure_ai/, like DeepSeek above

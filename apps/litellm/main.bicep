@@ -114,6 +114,11 @@ resource app 'Microsoft.App/containerApps@2025-01-01' = {
             { name: 'DATABASE_SSLMODE', value: 'verify-full' }
             // Links in the admin UI (and SSO redirects) point here.
             ...(domainBound ? [{ name: 'PROXY_BASE_URL', value: 'https://${names.customDomain}' }] : [])
+            // TCP keepalive on LiteLLM's connections to Azure: slow DeepSeek requests wait minutes
+            // without data, and the connection was dropped on the way after ~300 s (Azure logged
+            // 499, LiteLLM "Connection reset by peer"). Probes start after 60 s idle
+            // (AIOHTTP_TCP_KEEPIDLE default) and keep the connection alive.
+            { name: 'AIOHTTP_SO_KEEPALIVE', value: 'true' }
             // Secret changes alone don't start a new revision. This hash changes with the
             // config, so a new revision rolls out exactly when config.yaml changes.
             { name: 'CONFIG_HASH', value: uniqueString(config) }
