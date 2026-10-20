@@ -47,6 +47,7 @@ general_settings:
   # Never store prompts and responses in the spend logs (LiteLLM's default, made explicit: set
   # here, the admin UI can't switch it on, because the config takes precedence over the database).
   store_prompts_in_spend_logs: false
+  disable_budget_reservation: false
   # Delete per-request spend logs older than 90 days (checked daily). Budgets are unaffected:
   # they use the running totals on keys/users/teams, and the daily summaries are kept.
   maximum_spend_logs_retention_period: "90d"
