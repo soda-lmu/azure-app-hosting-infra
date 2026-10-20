@@ -33,6 +33,8 @@ model_list:
       # LiteLLM's azure_ai provider doesn't list reasoning_effort as supported, so drop_params
       # would silently remove it. Azure accepts it and DeepSeek then reasons.
       allowed_openai_params: ["reasoning_effort"]
+      # Tokens per minute rate limit. Works jointly with enforce_model_rate_limits below.
+      tpm: 930000
   - model_name: gpt-oss-120b
     litellm_params:
       model: azure_ai/gpt-oss-120b         # priced only under azure_ai/, like DeepSeek above
@@ -48,6 +50,10 @@ litellm_settings:
   # Azure AI through the managed identity (AZURE_CREDENTIAL, AZURE_CLIENT_ID) and renews them.
   # Locally, with AZURE_API_KEY from apps/litellm/.env (docker compose), the key is used instead.
   enable_azure_ad_token_refresh: true
+
+router_settings:
+  # Enforce tpm/rpm. Over the limit, the proxy answers 429 (retry-after 60) without calling Azure.
+  optional_pre_call_checks: ["enforce_model_rate_limits"]
 
 general_settings:
   # Never store prompts and responses in the spend logs (LiteLLM's default, made explicit: set
