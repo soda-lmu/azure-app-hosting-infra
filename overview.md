@@ -154,6 +154,7 @@ The code should be relatively simple, running it should cost as little as possib
 - **Does not scale for very high load.** The app runs as a single instance. Several instances
   wouldn't share their count of each key's spending, so a key could exceed its budget. Sharing
   would need an extra service (Redis).
+- **Timeout.** [Container Apps' HTTP ingress](https://learn.microsoft.com/en-us/azure/container-apps/ingress-overview#http) cuts every request after 240 s (fixed, not configurable). If difficult tasks take longer (like complex LLM prompts), they won't get answered.
 
 ### Costs
 - **Model usage is outside every budget.** The largest variable cost, calling the AI models, is
