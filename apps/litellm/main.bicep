@@ -91,7 +91,7 @@ resource app 'Microsoft.App/containerApps@2025-01-01' = {
         {
           name: 'litellm'
           // Tag and digest: a re-pushed tag can't change what runs. Renovate updates both.
-          image: 'ghcr.io/berriai/litellm-database:v1.105.0@sha256:f99e4cc55ce8a1c6888504ac6eff147868979d37363a7246cf804bbabdc27e88'
+          image: 'ghcr.io/berriai/litellm-database:v1.105.1@sha256:2bcadb9905b692a5ca4dadd51bccaaa23a95dc8a0f9322d9c9787f0ac2aeb50e'
           args: ['--config', '/mnt/secrets/litellm-config', '--port', '4000']
           resources: { cpu: json('1.0'), memory: '2Gi' }
           env: [
