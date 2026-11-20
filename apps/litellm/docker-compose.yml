@@ -3,7 +3,7 @@
 # Postgres here stands in for the shared server (same per-app role/database layout).
 services:
   postgres:
-    image: postgres:18-alpine
+    image: postgres:19-alpine
     environment:
       POSTGRES_USER: litellm
       POSTGRES_PASSWORD: local
